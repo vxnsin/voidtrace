@@ -80,7 +80,8 @@ onUnmounted(() => clearInterval(poll));
 
 <style scoped>
 .chat { display: grid; grid-template-columns: 260px 1fr; gap: 12px; height: calc(100vh - 110px); }
-.list { overflow: auto; padding: 6px; }
+.list { overflow-y: auto; overflow-x: hidden; padding: 6px; }
+.list::before, .list::after, .pane::before, .pane::after { display: none; }
 .item { padding: 6px 8px; cursor: pointer; }
 .item:hover, .item.on { background: var(--bg3); }
 .dot { width: 6px; height: 6px; background: var(--muted); display: inline-block; }
