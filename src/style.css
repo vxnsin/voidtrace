@@ -1,0 +1,99 @@
+:root {
+  --bg: #070708;
+  --bg2: #0b0b0d;
+  --bg3: #111114;
+  --fg: #b4b4b4;
+  --fg2: #8a8a8a;
+  --muted: #4e4e52;
+  --dim: #2a2a2e;
+  --accent: #c8102e;
+  --accent2: #e8e8e8;
+  --ok: #9aa89a;
+  --warn: #b89a5a;
+  --bad: #c8102e;
+  --border: #1c1c20;
+  --mono: "JetBrains Mono", "Cascadia Mono", "Cascadia Code", Consolas, "Courier New", monospace;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--fg);
+  background: var(--bg);
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body, #app { margin: 0; height: 100%; }
+body { background: var(--bg); overflow: hidden; }
+body.overlay { background: transparent; }
+::selection { background: var(--accent); color: #000; }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: var(--dim); }
+::-webkit-scrollbar-track { background: transparent; }
+
+.shell { display: grid; grid-template-columns: 220px 1fr; height: 100vh; }
+.nav { background: var(--bg); border-right: 1px solid var(--border); padding: 18px 14px; display: flex; flex-direction: column; gap: 0; }
+.nav .brand { color: var(--fg2); padding: 0 6px 18px; font-size: 11px; letter-spacing: .12em; line-height: 1.5; }
+.nav .brand b { color: var(--accent2); font-weight: 500; }
+.nav button { all: unset; cursor: pointer; padding: 5px 6px; color: var(--muted); display: flex; gap: 8px; letter-spacing: .06em; text-transform: uppercase; font-size: 11px; }
+.nav button::before { content: "·"; color: var(--dim); width: 10px; }
+.nav button:hover { color: var(--fg); }
+.nav button.active { color: var(--accent2); }
+.nav button.active::before { content: ">"; color: var(--accent); }
+.nav .foot { margin-top: auto; color: var(--muted); font-size: 10px; padding: 6px; line-height: 1.7; letter-spacing: .06em; text-transform: uppercase; }
+.nav .foot .dot { display: inline-block; width: 12px; color: var(--accent); }
+.nav .foot .dot::before { content: "x"; }
+.nav .foot .dot.on { color: var(--ok); }
+.nav .foot .dot.on::before { content: "o"; }
+
+.page { padding: 22px 28px; overflow: auto; }
+h1 { font-size: 12px; margin: 0 0 14px; font-weight: 500; letter-spacing: .18em; text-transform: uppercase; color: var(--accent2); display: flex; align-items: baseline; gap: 10px; }
+h1::after { content: ""; flex: 1; border-bottom: 1px dotted var(--dim); transform: translateY(-4px); }
+h2 { font-size: 10px; margin: 22px 0 8px; color: var(--muted); font-weight: 500; text-transform: uppercase; letter-spacing: .18em; display: flex; align-items: baseline; gap: 10px; }
+h2::after { content: ""; flex: 1; border-bottom: 1px dotted var(--dim); transform: translateY(-3px); }
+p { margin: 0 0 10px; }
+.row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.grid { display: grid; gap: 10px; }
+.grid.cols-3 { grid-template-columns: repeat(3, 1fr); }
+.grid.cols-4 { grid-template-columns: repeat(4, 1fr); }
+.card { background: var(--bg2); border: 1px solid var(--border); padding: 12px 14px; position: relative; }
+.card::before { content: "+"; position: absolute; top: -7px; left: -4px; color: var(--dim); font-size: 10px; }
+.card::after { content: "+"; position: absolute; bottom: -8px; right: -4px; color: var(--dim); font-size: 10px; }
+.stat { font-size: 22px; font-weight: 500; color: var(--accent2); letter-spacing: -.02em; }
+.stat small { font-size: 10px; color: var(--muted); font-weight: 400; display: block; letter-spacing: .12em; text-transform: uppercase; margin-top: 2px; }
+input, select, button, textarea { font: inherit; color: inherit; }
+input, select, textarea { background: var(--bg); border: 1px solid var(--dim); border-radius: 0; padding: 6px 9px; outline: none; color: var(--fg); }
+input::placeholder { color: var(--muted); }
+input:focus, select:focus, textarea:focus { border-color: var(--fg2); }
+select option { background: var(--bg2); }
+button.btn { background: transparent; border: 1px solid var(--dim); border-radius: 0; padding: 5px 11px; cursor: pointer; color: var(--fg); letter-spacing: .06em; text-transform: uppercase; font-size: 11px; }
+button.btn:hover { border-color: var(--fg2); color: var(--accent2); }
+button.btn.primary { border-color: var(--accent); color: var(--accent2); }
+button.btn.primary:hover { background: var(--accent); color: #000; }
+button.btn.danger { color: var(--muted); }
+button.btn.danger:hover { color: var(--accent); border-color: var(--accent); }
+button.btn:disabled { opacity: .4; cursor: default; }
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 6px 10px; border-bottom: 1px dotted var(--border); }
+th { color: var(--muted); font-weight: 500; font-size: 10px; text-transform: uppercase; letter-spacing: .14em; }
+tr:hover td { background: var(--bg3); }
+.muted { color: var(--muted); }
+.plat { color: var(--accent2); }
+.ducat { color: var(--warn); }
+.tag { font-size: 10px; padding: 1px 6px; border: 1px solid var(--dim); color: var(--muted); letter-spacing: .08em; text-transform: uppercase; }
+.tag.common { color: var(--fg2); } .tag.uncommon { color: var(--accent2); } .tag.rare { color: var(--accent); border-color: var(--accent); }
+.bar { height: 4px; background: var(--dim); overflow: hidden; }
+.bar > i { display: block; height: 100%; background: var(--fg2); }
+.error { color: var(--bad); }
+.ok { color: var(--ok); }
+.list { max-height: 320px; overflow: auto; }
+.pill { display: inline-flex; gap: 6px; align-items: center; padding: 3px 8px; border: 1px solid var(--dim); font-size: 11px; color: var(--fg2); }
+.grade { font-weight: 600; }
+.grade.S, .grade.A\+, .grade.A { color: var(--accent2); }
+.grade.B\+, .grade.B, .grade.A- { color: var(--fg); }
+.grade.B-, .grade.C\+, .grade.C { color: var(--warn); }
+.grade.C-, .grade.F { color: var(--bad); }
+code { color: var(--fg2); }
+.modes { display: inline-flex; border: 1px solid var(--dim); }
+.modes button { all: unset; cursor: pointer; padding: 4px 10px; font-size: 10px; letter-spacing: .08em; color: var(--muted); text-transform: uppercase; }
+.modes button:hover { color: var(--fg); }
+.modes button.on { background: var(--bg3); color: var(--accent2); }
+img { filter: grayscale(1) contrast(1.1); opacity: .85; }

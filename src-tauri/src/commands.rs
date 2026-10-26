@@ -1,0 +1,368 @@
+use crate::AppState;
+use serde::{Deserialize, Serialize};
+use std::sync::Arc;
+use tauri::{AppHandle, Manager, State};
+use wfc_core::db::{Datapoint, InvRow, RelicRun, Trade};
+use wfc_core::export::Export;
+use wfc_core::market::{MarketItem, Order, PriceSummary};
+use wfc_core::mastery::MasterySummary;
+use wfc_core::relic::RelicPlan;
+use wfc_core::riven::{RivenGrade, StatInput};
+
+type R<T> = Result<T, String>;
+fn err<E: std::fmt::Display>(e: E) -> String {
+    e.to_string()
+}
+
+fn export(st: &AppState) -> R<Arc<Export>> {
+    st.export.read().clone().ok_or_else(|| "export not loaded yet".into())
+}
+
+#[derive(Serialize)]
+pub struct Status {
+    pub export_loaded: bool,
+    pub market_items: usize,
+    pub wfm_logged_in: bool,
+    pub player: Option<String>,
+    pub ee_log: String,
+    pub ee_log_exists: bool,
+}
+
+#[tauri::command]
+pub fn status(st: State<AppState>) -> Status {
+    let p = wfc_core::ee_log_path();
+    Status {
+        export_loaded: st.export.read().is_some(),
+        market_items: st.market.items().len(),
+        wfm_logged_in: st.market.token().is_some(),
+        player: st.player.read().clone().or_else(|| st.db.get("player_name")),
+        ee_log_exists: p.exists(),
+        ee_log: p.display().to_string(),
+    }
+}
+
+#[tauri::command]
+pub async fn refresh_data(st: State<'_, AppState>) -> R<()> {
+    st.market.load_items().await.map_err(err)?;
+    let _ = std::fs::remove_file(Export::cache_path());
+    let ex = Export::fetch(&st.http).await.map_err(err)?;
+    *st.export.write() = Some(Arc::new(ex));
+    Ok(())
+}
+
+#[tauri::command]
+pub fn set_setting(st: State<AppState>, key: String, value: String) -> R<()> {
+    st.db.set(&key, &value).map_err(err)
+}
+#[tauri::command]
+pub fn get_setting(st: State<AppState>, key: String) -> Option<String> {
+    st.db.get(&key)
+}
+
+#[tauri::command]
+pub async fn load_profile(st: State<'_, AppState>, player_id: String) -> R<MasterySummary> {
+    let player_id = player_id.trim().trim_matches('"').to_string();
+    let p = wfc_core::profile::fetch(&st.http, &player_id).await.map_err(err)?;
+    st.db.set("player_id", &player_id).map_err(err)?;
+    if !p.display_name.is_empty() {
+        st.db.set("player_name", &p.display_name).map_err(err)?;
+    }
+    st.db.set("profile_cache", &serde_json::to_string(&p).map_err(err)?).map_err(err)?;
+    let ex = export(&st)?;
+    Ok(wfc_core::mastery::summary(&ex, Some(&p)))
+}
+
+#[derive(Serialize)]
+pub struct SyncResult {
+    pub platinum: i64,
+    pub credits: i64,
+    pub ducats: i64,
+    pub items_total: usize,
+    pub items_tradeable: usize,
+    pub seconds: f32,
+}
+
+/// Read the inventory from the game process and replace the local ledger.
+#[tauri::command]
+pub async fn inventory_sync(app: AppHandle) -> R<SyncResult> {
+    crate::overlay::sync_inventory(&app).await.map_err(err)
+}
+
+/// Shows the overlay with real prices for a few sample rewards, so the HUD can
+/// be checked without cracking a relic.
+#[tauri::command]
+pub async fn overlay_preview(app: AppHandle) -> R<()> {
+    use wfc_core::ocr::RewardHit;
+    let st = app.state::<AppState>();
+    let samples = ["Wisp Prime Systems Blueprint", "Forma Blueprint", "Nikana Prime Blade", "Braton Prime Receiver"];
+    let mut hits = Vec::new();
+    for raw in samples {
+        let price = match st.market.find_item(raw) {
+            Some(mi) => st.market.price(&mi.slug).await.ok(),
+            None => None,
+        };
+        hits.push(RewardHit { raw: raw.to_string(), price, best: false });
+    }
+    if let Some(i) = hits
+        .iter()
+        .enumerate()
+        .max_by_key(|(_, h)| h.price.as_ref().and_then(|p| p.sell).unwrap_or(0))
+        .map(|(i, _)| i)
+    {
+        hits[i].best = true;
+    }
+    use tauri::Emitter;
+    app.emit("rewards", &hits).map_err(err)?;
+    crate::overlay::show(&app);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn mastery(st: State<AppState>) -> R<MasterySummary> {
+    let ex = export(&st)?;
+    let p = st.db.get("profile_cache").and_then(|s| serde_json::from_str(&s).ok());
+    Ok(wfc_core::mastery::summary(&ex, p.as_ref()))
+}
+
+#[derive(Serialize)]
+pub struct RelicHit {
+    pub relic: String,
+    pub rarity: String,
+    pub chance: [f32; 4],
+}
+
+#[tauri::command]
+pub fn relics_for(st: State<AppState>, item: String) -> R<Vec<RelicHit>> {
+    let ex = export(&st)?;
+    Ok(wfc_core::relic::relics_for(&ex, &item)
+        .into_iter()
+        .map(|(relic, rarity, chance)| RelicHit { relic, rarity, chance })
+        .collect())
+}
+
+#[tauri::command]
+pub fn relic_list(st: State<AppState>) -> R<Vec<String>> {
+    let ex = export(&st)?;
+    let mut v: Vec<String> = ex.relics.iter().map(|r| r.name.clone()).collect();
+    v.sort();
+    Ok(v)
+}
+
+#[tauri::command]
+pub async fn relic_plan(st: State<'_, AppState>, relic: String) -> R<RelicPlan> {
+    let ex = export(&st)?;
+    let r = ex
+        .relics
+        .iter()
+        .find(|r| r.name.eq_ignore_ascii_case(&relic))
+        .ok_or("unknown relic")?;
+    Ok(wfc_core::relic::plan(&ex, &st.market, r).await)
+}
+
+#[tauri::command]
+pub fn market_search(st: State<AppState>, q: String, limit: usize) -> Vec<MarketItem> {
+    let n = wfc_core::norm(&q);
+    let mut v: Vec<MarketItem> = st
+        .market
+        .items()
+        .into_iter()
+        .filter(|i| wfc_core::norm(&i.name).contains(&n))
+        .collect();
+    v.sort_by_key(|i| i.name.len());
+    v.truncate(limit);
+    v
+}
+
+/// Resolve warframe.market item ids (as used in orders) to catalogue entries.
+#[tauri::command]
+pub fn market_items_by_id(st: State<AppState>, ids: Vec<String>) -> std::collections::HashMap<String, MarketItem> {
+    let items = st.market.items();
+    ids.into_iter()
+        .filter_map(|id| items.iter().find(|i| i.id == id).map(|i| (id, i.clone())))
+        .collect()
+}
+
+#[tauri::command]
+pub async fn market_price(st: State<'_, AppState>, slug: String) -> R<PriceSummary> {
+    st.market.price(&slug).await.map_err(err)
+}
+
+#[tauri::command]
+pub async fn market_orders(st: State<'_, AppState>, slug: String) -> R<Vec<Order>> {
+    st.market.orders(&slug).await.map_err(err)
+}
+
+#[tauri::command]
+pub async fn wfm_login(app: AppHandle, st: State<'_, AppState>, email: String, password: String) -> R<String> {
+    let name = st.market.login(&email, &password).await.map_err(err)?;
+    if let Some(t) = st.market.token() {
+        st.db.set("wfm_token", &t).map_err(err)?;
+    }
+    st.db.set("wfm_name", &name).map_err(err)?;
+    crate::connect_ws(&app);
+    Ok(name)
+}
+
+#[tauri::command]
+pub async fn wfm_logout(st: State<'_, AppState>) -> R<()> {
+    let sock = st.ws.write().take();
+    if let Some(s) = sock {
+        s.close().await;
+    }
+    st.market.set_token(None);
+    st.db.set("wfm_token", "").map_err(err)?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn wfm_status(st: State<AppState>) -> Option<wfc_core::ws::RichStatus> {
+    st.wfm_status.read().clone()
+}
+
+#[tauri::command]
+pub async fn wfm_set_status(
+    st: State<'_, AppState>,
+    status: String,
+    activity: Option<String>,
+    details: Option<String>,
+) -> R<()> {
+    let sock = st.ws.read().clone().ok_or("socket not connected (log in first)")?;
+    let activity = activity.map(|kind| wfc_core::ws::Activity {
+        kind,
+        details,
+        started_at: chrono::Utc::now().timestamp().into(),
+    });
+    sock.set_status(&status, None, activity).await.map_err(err)
+}
+
+#[tauri::command]
+pub async fn wfm_chats(st: State<'_, AppState>) -> R<Vec<wfc_core::market::Chat>> {
+    st.market.chats().await.map_err(err)
+}
+
+#[tauri::command]
+pub async fn wfm_chat(st: State<'_, AppState>, id: String) -> R<Vec<wfc_core::market::ChatMessage>> {
+    st.market.chat_messages(&id).await.map_err(err)
+}
+
+#[tauri::command]
+pub async fn wfm_chat_send(st: State<'_, AppState>, id: String, message: String) -> R<()> {
+    st.market.chat_send(&id, &message).await.map_err(err)
+}
+
+#[tauri::command]
+pub fn open_url(app: AppHandle, url: String) -> R<()> {
+    use tauri_plugin_opener::OpenerExt;
+    if !url.starts_with("https://warframe.market/") {
+        return Err("only warframe.market links".into());
+    }
+    app.opener().open_url(url, None::<&str>).map_err(err)
+}
+
+#[tauri::command]
+pub async fn wfm_my_orders(st: State<'_, AppState>) -> R<Vec<Order>> {
+    st.market.my_orders().await.map_err(err)
+}
+
+#[tauri::command]
+pub async fn wfm_create_order(
+    st: State<'_, AppState>,
+    item_id: String,
+    sell: bool,
+    platinum: u32,
+    quantity: u32,
+    rank: Option<u8>,
+) -> R<Order> {
+    st.market.create_order(&item_id, sell, platinum, quantity, rank).await.map_err(err)
+}
+
+#[tauri::command]
+pub async fn wfm_update_order(st: State<'_, AppState>, id: String, platinum: u32, quantity: u32, visible: bool) -> R<Order> {
+    st.market.update_order(&id, platinum, quantity, visible).await.map_err(err)
+}
+
+#[tauri::command]
+pub async fn wfm_delete_order(st: State<'_, AppState>, id: String) -> R<()> {
+    st.market.delete_order(&id).await.map_err(err)
+}
+
+#[tauri::command]
+pub fn inventory(st: State<AppState>) -> R<Vec<InvRow>> {
+    st.db.inventory().map_err(err)
+}
+#[tauri::command]
+pub fn inventory_set(st: State<AppState>, slug: String, name: String, quantity: i32) -> R<()> {
+    st.db.inventory_set(&slug, &name, quantity).map_err(err)
+}
+#[tauri::command]
+pub fn inventory_add(st: State<AppState>, slug: String, name: String, delta: i32) -> R<i32> {
+    st.db.inventory_add(&slug, &name, delta).map_err(err)
+}
+
+#[tauri::command]
+pub fn grade_riven(st: State<AppState>, weapon: String, stats: Vec<StatInput>) -> R<RivenGrade> {
+    let ex = export(&st)?;
+    Ok(wfc_core::riven::grade(&ex, &weapon, &stats))
+}
+
+#[tauri::command]
+pub fn trades(st: State<AppState>) -> R<Vec<Trade>> {
+    st.db.trades().map_err(err)
+}
+
+#[derive(Deserialize)]
+pub struct NewTrade {
+    pub item: String,
+    pub quantity: u32,
+    pub platinum: i32,
+    pub direction: String,
+    pub partner: String,
+}
+
+#[tauri::command]
+pub fn add_trade(st: State<AppState>, t: NewTrade) -> R<i64> {
+    st.db
+        .add_trade(&Trade {
+            id: 0,
+            ts: chrono::Utc::now().timestamp(),
+            item: t.item,
+            quantity: t.quantity,
+            platinum: t.platinum,
+            direction: t.direction,
+            partner: t.partner,
+        })
+        .map_err(err)
+}
+#[tauri::command]
+pub fn delete_trade(st: State<AppState>, id: i64) -> R<()> {
+    st.db.delete_trade(id).map_err(err)
+}
+
+#[tauri::command]
+pub fn datapoints(st: State<AppState>, limit: usize) -> R<Vec<Datapoint>> {
+    st.db.datapoints(limit).map_err(err)
+}
+#[tauri::command]
+pub fn add_datapoint(st: State<AppState>, platinum: i32, ducats: i32, credits: i64) -> R<()> {
+    st.db
+        .add_datapoint(&Datapoint { ts: chrono::Utc::now().timestamp(), platinum, ducats, credits })
+        .map_err(err)
+}
+#[tauri::command]
+pub fn relic_runs(st: State<AppState>, limit: usize) -> R<Vec<RelicRun>> {
+    st.db.relic_runs(limit).map_err(err)
+}
+
+#[tauri::command]
+pub async fn ocr_now(app: AppHandle) -> R<()> {
+    crate::overlay::run_ocr(&app).await;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn overlay_toggle(app: AppHandle) -> R<bool> {
+    let w = app.get_webview_window("overlay").ok_or("no overlay")?;
+    let vis = w.is_visible().map_err(err)?;
+    if vis { crate::overlay::hide(&app) } else { crate::overlay::show(&app) }
+    Ok(!vis)
+}
