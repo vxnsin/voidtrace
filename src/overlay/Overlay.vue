@@ -18,15 +18,23 @@ const error = ref("");
 const hotkey = ref("");
 const ghost = ref<{ id: WidgetId; x: number; y: number; moved: boolean } | null>(null);
 const ghostEl = ref<HTMLElement | null>(null);
+const hudHidden = ref(false);
+const hudKey = ref("");
+const toast = ref("");
+let toastTimer: number | undefined;
+const pretty = (k?: string) => (k ?? "").replace("CommandOrControl", "Ctrl");
 
 async function reload() {
   cfgs.value = await loadWidgets();
-  hotkey.value = ((await api.getSetting("overlay_hotkey")) ?? "CommandOrControl+Shift+W").replace("CommandOrControl", "Ctrl");
+  const keys = await api.overlayHotkeys();
+  hotkey.value = pretty(keys.edit);
+  hudKey.value = pretty(keys.hud);
 }
 const shown = computed(() =>
   cfgs.value.filter((w) => {
     if (!w.pinned) return false;
     if (edit.value) return true;
+    if (hudHidden.value) return false;
     if (w.id === "rewards") return live.showRewards;
     return live.game.focused && (w.show === "always" || w.show === live.game.where);
   }),
@@ -80,6 +88,13 @@ onMounted(async () => {
   startLive();
   await reload();
   api.on("widgets-changed", reload);
+  hudHidden.value = await api.hudHidden();
+  api.on<boolean>("overlay-hud", (h) => {
+    hudHidden.value = h;
+    toast.value = h ? `Widgets hidden · ${hudKey.value} to show` : "Widgets back";
+    clearTimeout(toastTimer);
+    toastTimer = window.setTimeout(() => (toast.value = ""), 2500);
+  });
   api.on<boolean>("overlay-edit", (on) => { edit.value = on; if (on) reload(); else sel.value = null; });
   api.on<string>("overlay-error", (e) => { error.value = e; setTimeout(() => (error.value = ""), 6000); });
   api.on("rewards", () => (error.value = ""));
@@ -128,6 +143,7 @@ onMounted(async () => {
       </div>
     </template>
     <div v-if="error" class="err">{{ error }}</div>
+    <div v-if="toast && live.game.focused" class="toast">{{ toast }}</div>
   </WidgetLayer>
 </template>
 
@@ -157,5 +173,6 @@ onMounted(async () => {
 .ws-all input { flex: 1; accent-color: #c8102e; }
 .ws-all p { margin: 0; color: #4e4e52; }
 .ghost { position: fixed; transform: translate(-50%, -50%); pointer-events: none; opacity: .9; z-index: 30; }
+.toast { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); background: rgba(7, 7, 8, .9); border: 1px solid #2a2a2e; color: #b4b4b4; padding: 5px 12px; font: 11px var(--mono); letter-spacing: .06em; }
 .err { position: absolute; top: 60px; left: 50%; transform: translateX(-50%); background: rgba(7, 7, 8, .92); border: 1px solid #c8102e; color: #c8102e; padding: 6px 12px; font: 11px var(--mono); }
 </style>

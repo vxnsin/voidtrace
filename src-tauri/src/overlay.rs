@@ -37,21 +37,47 @@ pub fn set_edit(app: &AppHandle, on: bool) {
     let _ = app.emit("overlay-edit", on);
 }
 
-/// (Re)bind the edit-mode hotkey, e.g. "CommandOrControl+Shift+W".
-pub fn register_hotkey(app: &AppHandle, key: &str) -> anyhow::Result<()> {
+/// Hide or show every widget at once (the HUD hotkey).
+pub fn set_hud_hidden(app: &AppHandle, hidden: bool) {
+    *app.state::<AppState>().hud_hidden.write() = hidden;
+    let _ = app.emit("overlay-hud", hidden);
+}
+
+/// Hotkey actions, their setting and default combination.
+pub const HOTKEYS: &[(&str, &str, &str)] = &[
+    ("edit", "overlay_hotkey", "CommandOrControl+Shift+W"),
+    ("hud", "overlay_hud_hotkey", "CommandOrControl+Shift+H"),
+];
+
+/// (Re)bind the hotkey of one action ("edit" or "hud"), e.g. "CommandOrControl+Shift+W".
+pub fn register_hotkey(app: &AppHandle, action: &str, key: &str) -> anyhow::Result<()> {
     use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
     let st = app.state::<AppState>();
+    if st.hotkeys.read().iter().any(|(a, k)| a != action && k.eq_ignore_ascii_case(key)) {
+        anyhow::bail!("{key} is already used by another hotkey");
+    }
     let gs = app.global_shortcut();
-    if let Some(old) = st.hotkey.write().take() {
+    if let Some(old) = st.hotkeys.write().remove(action) {
         let _ = gs.unregister(old.as_str());
     }
-    gs.on_shortcut(key, |app, _, ev| {
-        if matches!(ev.state, ShortcutState::Pressed) {
-            let on = !*app.state::<AppState>().overlay_edit.read();
-            set_edit(app, on);
+    let act = action.to_string();
+    gs.on_shortcut(key, move |app, _, ev| {
+        if !matches!(ev.state, ShortcutState::Pressed) {
+            return;
+        }
+        let st = app.state::<AppState>();
+        match act.as_str() {
+            "edit" => {
+                let on = !*st.overlay_edit.read();
+                set_edit(app, on);
+            }
+            _ => {
+                let hidden = !*st.hud_hidden.read();
+                set_hud_hidden(app, hidden);
+            }
         }
     })?;
-    *st.hotkey.write() = Some(key.to_string());
+    st.hotkeys.write().insert(action.to_string(), key.to_string());
     Ok(())
 }
 

@@ -19,7 +19,8 @@ pub struct AppState {
     pub wfm_status: Arc<RwLock<Option<wfc_core::ws::RichStatus>>>,
     pub worldstate: Arc<RwLock<Option<serde_json::Value>>>,
     pub overlay_edit: Arc<RwLock<bool>>,
-    pub hotkey: Arc<RwLock<Option<String>>>,
+    pub hotkeys: Arc<RwLock<std::collections::HashMap<String, String>>>,
+    pub hud_hidden: Arc<RwLock<bool>>,
 }
 
 /// (Re)connect the warframe.market socket with the current token and forward
@@ -105,7 +106,8 @@ pub fn run() {
         wfm_status: Arc::new(RwLock::new(None)),
         worldstate: Arc::new(RwLock::new(None)),
         overlay_edit: Arc::new(RwLock::new(false)),
-        hotkey: Arc::new(RwLock::new(None)),
+        hotkeys: Arc::new(RwLock::new(Default::default())),
+        hud_hidden: Arc::new(RwLock::new(false)),
     };
 
     tauri::Builder::default()
@@ -194,9 +196,11 @@ pub fn run() {
             });
 
             overlay::init(&handle)?;
-            let key = st.db.get("overlay_hotkey").unwrap_or_else(|| "CommandOrControl+Shift+W".into());
-            if let Err(e) = overlay::register_hotkey(&handle, &key) {
-                tracing::warn!("overlay hotkey {key}: {e}");
+            for (action, setting, default) in overlay::HOTKEYS {
+                let key = st.db.get(setting).unwrap_or_else(|| default.to_string());
+                if let Err(e) = overlay::register_hotkey(&handle, action, &key) {
+                    tracing::warn!("{action} hotkey {key}: {e}");
+                }
             }
             connect_ws(&handle);
             Ok(())
@@ -220,6 +224,9 @@ pub fn run() {
             commands::worldstate,
             commands::overlay_edit,
             commands::set_overlay_hotkey,
+            commands::overlay_hotkeys,
+            commands::hud_hidden,
+            commands::set_hud_hidden,
             commands::market_price,
             commands::market_orders,
             commands::wfm_login,

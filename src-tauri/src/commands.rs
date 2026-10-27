@@ -211,11 +211,29 @@ pub fn overlay_edit(app: AppHandle, on: bool) {
     crate::overlay::set_edit(&app, on);
 }
 
-/// Rebind the overlay edit hotkey and remember it.
+/// Rebind the hotkey of an overlay action ("edit" or "hud") and remember it.
 #[tauri::command]
-pub fn set_overlay_hotkey(app: AppHandle, st: State<AppState>, key: String) -> R<()> {
-    crate::overlay::register_hotkey(&app, &key).map_err(err)?;
-    st.db.set("overlay_hotkey", &key).map_err(err)
+pub fn set_overlay_hotkey(app: AppHandle, st: State<AppState>, action: String, key: String) -> R<()> {
+    let (_, setting, _) = crate::overlay::HOTKEYS.iter().find(|(a, _, _)| *a == action).ok_or("unknown hotkey action")?;
+    crate::overlay::register_hotkey(&app, &action, &key).map_err(err)?;
+    st.db.set(setting, &key).map_err(err)
+}
+
+/// Current hotkeys by action.
+#[tauri::command]
+pub fn overlay_hotkeys(st: State<AppState>) -> std::collections::HashMap<String, String> {
+    st.hotkeys.read().clone()
+}
+
+/// Whether the widgets are hidden by the HUD hotkey.
+#[tauri::command]
+pub fn hud_hidden(st: State<AppState>) -> bool {
+    *st.hud_hidden.read()
+}
+
+#[tauri::command]
+pub fn set_hud_hidden(app: AppHandle, hidden: bool) {
+    crate::overlay::set_hud_hidden(&app, hidden);
 }
 
 /// Start with Windows (hidden, `--background`) and open when Warframe starts.
