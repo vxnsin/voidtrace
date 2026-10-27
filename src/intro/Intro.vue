@@ -88,11 +88,20 @@ function frame(now: number) {
       }
       const crimson = m.k === 2 || front;
 
+      // Ring around the mark, drawn clockwise from the top once the mark stands.
+      const R = ew * 0.72, ringP = Math.min(1, Math.max(0, (p - 0.3) / 0.25));
+      const sweep = ((((ang + Math.PI / 2) / (2 * Math.PI)) % 1) + 1) % 1;
+      let halo = 0;
+      if (ringP > 0 && sweep <= ringP) {
+        if (Math.abs(r - R) < 0.55) halo = 0.9;
+        else if (Math.abs(r - R * 1.1) < 0.45 && hash(x, y, 13) > 0.5) halo = 0.35;
+      }
+
       // Radial web: 12 spokes + concentric rings, drawn outward over time
       let web = 0;
       const spoke = Math.abs(((ang / (Math.PI / 6)) % 1 + 1) % 1 - 0.5) * 2; // 0 at spoke
       const ring = Math.abs(((r / 9) % 1) - 0.5) * 2;
-      if (r / maxR < rays && m.k === 0 && r > ew * 0.62) {
+      if (r / maxR < rays && m.k === 0 && r > R * 1.18) {
         if (spoke > 0.96) web = 0.28;
         if (ring > 0.97 && hash(x, y, 3) > 0.35) web = 0.22;
       }
@@ -106,7 +115,7 @@ function frame(now: number) {
       if (dist > 0 && dist < 12 && hash(x, 1, 9) > 0.55) rain = (1 - dist / 12) * 0.35;
 
       const n = hash(x, y, Math.floor(t * 8)) ;
-      let val = Math.max(v, web, rain);
+      let val = Math.max(v, web, rain, halo);
       if (val <= 0) { if (n > 0.995) val = 0.08; else continue; }
       if (v === 0 && n < 0.08) val *= 0.3; // flicker
 

@@ -49,6 +49,48 @@ async function finish() {
 async function skip() { await api.setSetting("setup_done", "1"); emit("done"); }
 
 const canNext = computed(() => step.value < steps.length - 1);
+// A step counts as done when its check passes; until then Next stays off and
+// "Skip this step" is the explicit way past it.
+const done = computed(() => {
+  if (step.value === 1) return !!status.value?.ee_log_exists && running.value;
+  if (step.value === 2) return !!status.value?.wfm_logged_in;
+  if (step.value === 3) return !memorySync.value || !!sync.value;
+  return true;
+});
+
+// Background: slow falling glyphs, like the intro.
+const bg = ref<HTMLCanvasElement | null>(null);
+let raf = 0;
+function rain() {
+  const c = bg.value;
+  if (!c) return;
+  const ctx = c.getContext("2d")!;
+  const CW = 8, CH = 14, glyphs = " .:;!?jJ$8@#";
+  let cols = 0, rows = 0, heads: number[] = [], speed: number[] = [];
+  const size = () => {
+    c.width = innerWidth; c.height = innerHeight;
+    cols = Math.ceil(c.width / CW); rows = Math.ceil(c.height / CH);
+    heads = Array.from({ length: cols }, () => Math.random() * rows * 2 - rows);
+    speed = Array.from({ length: cols }, () => 0.08 + Math.random() * 0.22);
+  };
+  size();
+  addEventListener("resize", size);
+  const frame = () => {
+    ctx.fillStyle = "rgba(7,7,8,0.18)";
+    ctx.fillRect(0, 0, c.width, c.height);
+    ctx.font = `${CH - 2}px ${getComputedStyle(document.documentElement).getPropertyValue("--mono")}`;
+    for (let x = 0; x < cols; x++) {
+      if (x % 3) continue;
+      heads[x] += speed[x];
+      if (heads[x] > rows + 10) heads[x] = -Math.random() * rows;
+      const y = Math.floor(heads[x]);
+      ctx.fillStyle = x % 37 === 0 ? "rgba(200,16,46,.55)" : "rgba(150,150,155,.35)";
+      ctx.fillText(glyphs[1 + Math.floor(Math.random() * (glyphs.length - 1))], x * CW, y * CH);
+    }
+    raf = requestAnimationFrame(frame);
+  };
+  frame();
+}
 onMounted(async () => {
   who.value = (await api.getSetting("wfm_name")) ?? "";
   memorySync.value = (await api.getSetting("memory_sync")) === "1";
@@ -57,11 +99,13 @@ onMounted(async () => {
   await refresh();
   poll = window.setInterval(refresh, 2000);
 });
-onUnmounted(() => clearInterval(poll));
+onUnmounted(() => { clearInterval(poll); cancelAnimationFrame(raf); });
+onMounted(rain);
 </script>
 
 <template>
   <div class="setup">
+    <canvas ref="bg" class="bg"></canvas>
     <div class="box card">
       <div class="top">
         <h1>Setup <span class="muted">{{ step + 1 }} / {{ steps.length }} · {{ steps[step] }}</span></h1>
@@ -77,8 +121,8 @@ onUnmounted(() => clearInterval(poll));
       <section v-if="step === 1">
         <p>Start Warframe and log in. VoidTrace picks up the game on its own.</p>
         <ul class="check">
-          <li :class="{ ok: status?.ee_log_exists }">Game log found <span class="muted">{{ status?.ee_log }}</span></li>
-          <li :class="{ ok: running }">Warframe is running</li>
+          <li :class="status?.ee_log_exists ? 'ok' : 'wait'">Game log <span class="st">{{ status?.ee_log_exists ? "found" : "waiting…" }}</span> <span class="muted">{{ status?.ee_log }}</span></li>
+          <li :class="running ? 'ok' : 'wait'">Warframe <span class="st">{{ running ? "running" : "waiting…" }}</span></li>
           <li class="info">Display mode <b>Borderless Fullscreen</b> — exclusive fullscreen hides every overlay</li>
           <li class="info">Game language <b>English</b> — the reward overlay matches English item names</li>
         </ul>
@@ -121,7 +165,8 @@ onUnmounted(() => clearInterval(poll));
 
       <div class="row steps-nav">
         <button class="btn" v-if="step > 0" @click="step--">Back</button>
-        <button class="btn primary" v-if="canNext" @click="step++">{{ step === 0 ? "Start" : "Next" }}</button>
+        <button v-if="canNext && !done" class="btn" @click="step++">Skip this step</button>
+        <button class="btn primary" v-if="canNext" :disabled="!done" :title="done ? '' : 'Finish this step or skip it'" @click="step++">{{ step === 0 ? "Start" : "Next" }}</button>
         <button class="btn primary" v-else @click="finish">Done</button>
       </div>
     </div>
@@ -138,7 +183,14 @@ onUnmounted(() => clearInterval(poll));
 section { min-height: 150px; }
 .check { list-style: none; padding: 0; margin: 10px 0; display: grid; gap: 8px; }
 .check li::before { content: "[ ]"; color: var(--dim); margin-right: 10px; }
-.check li.ok::before { content: "[x]"; color: var(--accent2); }
+.check li.ok::before { content: "[x]"; color: var(--ok); }
+.check li.wait::before { content: "[ ]"; color: var(--warn); }
+.check .st { margin: 0 6px; text-transform: uppercase; font-size: 10px; letter-spacing: .1em; }
+.check li.ok .st { color: var(--ok); }
+.check li.wait .st { color: var(--warn); animation: blink 1.2s steps(2) infinite; }
+@keyframes blink { 50% { opacity: .35; } }
+.bg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.box { position: relative; background: rgba(11, 11, 13, .94); }
 .check li.info::before { content: " · "; }
 .steps-nav { justify-content: flex-end; margin-top: 18px; }
 </style>
