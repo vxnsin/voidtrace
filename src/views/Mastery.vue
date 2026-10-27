@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from "vue";
 import { api, type MasterySummary } from "../api";
 import ItemIcon from "../components/ItemIcon.vue";
+import MasteryRoutes from "../components/MasteryRoutes.vue";
 
 const playerId = ref("");
 const name = ref("");
@@ -67,6 +68,8 @@ onMounted(async () => {
         <div class="bar" style="margin-top:6px"><i :style="{ width: (v.done / v.total) * 100 + '%' }"></i></div>
       </div>
     </div>
+    <MasteryRoutes />
+
     <h2>Unmastered — closest first</h2>
     <table>
       <thead><tr><th>Item</th><th>Category</th><th>Progress</th><th>MR points</th></tr></thead>

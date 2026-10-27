@@ -31,6 +31,9 @@ pub struct MarketItem {
     /// Prime parts and relics out of the drop tables (warframe.market flag).
     #[serde(default)]
     pub vaulted: bool,
+    /// Game path (warframe.market `gameRef`): a blueprint, part or set root.
+    #[serde(default)]
+    pub game_ref: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -267,6 +270,8 @@ impl Market {
             tags: Vec<String>,
             #[serde(default)]
             vaulted: Option<bool>,
+            #[serde(default, rename = "gameRef")]
+            game_ref: String,
             i18n: HashMap<String, I18n>,
         }
         #[derive(Deserialize)]
@@ -289,6 +294,7 @@ impl Market {
                     tradable: r.tradable.unwrap_or(true),
                     tags: r.tags,
                     vaulted: r.vaulted.unwrap_or(false),
+                    game_ref: r.game_ref,
                 })
             })
             .collect();

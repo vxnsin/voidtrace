@@ -11,6 +11,7 @@
 
 pub mod db;
 pub mod export;
+pub mod foundry;
 pub mod inventory;
 pub mod log;
 pub mod market;

@@ -699,3 +699,268 @@ pub fn relic_overview(app: AppHandle, st: State<AppState>, only_owned: bool) -> 
     }
     Ok(RelicOverview { rows, synced: st.db.get("owned_relics").is_some(), pending })
 }
+
+// ---- Foundry, sets, mastery routes (#12, #13) ----
+
+use wfc_core::foundry::{self, Build, Owned};
+
+fn owned_items(st: &AppState) -> Owned {
+    st.db.get("owned_items").and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default()
+}
+
+#[derive(Serialize)]
+pub struct FoundryRow {
+    #[serde(flatten)]
+    pub build: Build,
+    pub mastered: bool,
+    pub xp: i64,
+}
+
+#[derive(Serialize)]
+pub struct FoundryOverview {
+    pub rows: Vec<FoundryRow>,
+    /// The inventory sync has run (owned counts are real).
+    pub synced: bool,
+    pub mastery_rank: u32,
+}
+
+#[tauri::command]
+pub fn foundry_overview(st: State<AppState>) -> R<FoundryOverview> {
+    let ex = export(&st)?;
+    let items = st.market.items();
+    let idx = foundry::Index::new(&ex, &items);
+    let owned = owned_items(&st);
+    let p = st.db.get("profile_cache").and_then(|s| serde_json::from_str(&s).ok());
+    let m = wfc_core::mastery::summary(&ex, p.as_ref());
+    let xp: std::collections::HashMap<&str, (bool, i64)> = m.items.iter().map(|i| (i.unique_name.as_str(), (i.mastered, i.xp))).collect();
+    let rows = ex
+        .all_masterable()
+        .map(|it| {
+            let (mastered, xp) = xp.get(it.unique_name.as_str()).copied().unwrap_or((false, 0));
+            FoundryRow { build: foundry::build(&ex, &idx, &owned, it), mastered, xp }
+        })
+        .collect();
+    Ok(FoundryOverview { rows, synced: !owned.is_empty(), mastery_rank: m.rank })
+}
+
+#[derive(Serialize)]
+pub struct PartSource {
+    pub name: String,
+    pub slug: Option<String>,
+    pub plat: Option<u32>,
+    pub relics: Vec<RelicHit>,
+}
+
+/// Where to get each part of one item: relics that drop it and the market price.
+#[tauri::command]
+pub async fn foundry_sources(st: State<'_, AppState>, unique_name: String) -> R<Vec<PartSource>> {
+    let ex = export(&st)?;
+    let items = st.market.items();
+    let it = ex.all_masterable().find(|i| i.unique_name == unique_name).ok_or("unknown item")?.clone();
+    let wanted: Vec<(String, Option<String>)> = {
+        let idx = foundry::Index::new(&ex, &items);
+        let b = foundry::build(&ex, &idx, &owned_items(&st), &it);
+        let mut w = vec![];
+        if let Some(bp) = &b.blueprint {
+            w.push((ex.item_name(bp), b.bp_slug.clone()));
+        }
+        for p in &b.parts {
+            w.push((p.blueprint.as_deref().map(|x| ex.item_name(x)).unwrap_or(p.name.clone()), p.slug.clone()));
+        }
+        w
+    };
+    let mut out = vec![];
+    for (name, slug) in wanted {
+        let plat = match &slug {
+            Some(s) => st.market.price(s).await.ok().and_then(|p| p.sell),
+            None => None,
+        };
+        let relics = wfc_core::relic::relics_for(&ex, &name)
+            .into_iter()
+            .take(6)
+            .map(|(relic, rarity, chance)| {
+                let vaulted = st.market.find_item_exact(&format!("{relic} Relic")).map(|i| i.vaulted).unwrap_or(false);
+                RelicHit { relic, rarity, chance, vaulted }
+            })
+            .collect();
+        out.push(PartSource { name, slug, plat, relics });
+    }
+    Ok(out)
+}
+
+#[tauri::command]
+pub fn inventory_sets(st: State<AppState>) -> R<Vec<foundry::SetInfo>> {
+    let ex = export(&st)?;
+    let items = st.market.items();
+    let idx = foundry::Index::new(&ex, &items);
+    let have: std::collections::HashMap<String, i64> =
+        st.db.inventory().map_err(err)?.into_iter().map(|r| (r.slug, r.quantity as i64)).collect();
+    Ok(foundry::sets(&idx, &items, &have))
+}
+
+#[derive(Serialize)]
+pub struct BuyPart {
+    pub name: String,
+    pub slug: String,
+    pub plat: Option<u32>,
+}
+
+#[derive(Serialize)]
+pub struct PlatRoute {
+    pub unique_name: String,
+    pub name: String,
+    pub category: String,
+    pub image: Option<String>,
+    pub missing: Vec<BuyPart>,
+    /// Sum of the cheapest sellers, once every part has a price.
+    pub total: Option<u32>,
+}
+
+#[derive(Serialize)]
+pub struct Intrinsic {
+    pub name: String,
+    pub rank: i64,
+}
+
+#[derive(Serialize)]
+pub struct MasteryRoutes {
+    pub relics: Vec<foundry::RelicRoute>,
+    pub plat: Vec<PlatRoute>,
+    pub intrinsics: Vec<Intrinsic>,
+    pub synced: bool,
+    pub pending: usize,
+}
+
+static MASTERY_WARMING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Ways to the next mastery: from relics I own, or by buying parts (cheapest
+/// first; prices load in the background), plus missing intrinsics.
+#[tauri::command]
+pub fn mastery_routes(app: AppHandle, st: State<AppState>) -> R<MasteryRoutes> {
+    let ex = export(&st)?;
+    let items = st.market.items();
+    let idx = foundry::Index::new(&ex, &items);
+    let owned = owned_items(&st);
+    let p = st.db.get("profile_cache").and_then(|s| serde_json::from_str(&s).ok());
+    let m = wfc_core::mastery::summary(&ex, p.as_ref());
+    let done: std::collections::HashSet<&str> = m.items.iter().filter(|i| i.mastered).map(|i| i.unique_name.as_str()).collect();
+    let started: std::collections::HashSet<&str> = m.items.iter().filter(|i| i.xp > 0).map(|i| i.unique_name.as_str()).collect();
+    let todo: Vec<&wfc_core::export::ExportItem> = ex.all_masterable().filter(|i| !done.contains(i.unique_name.as_str())).collect();
+
+    let relics = foundry::relic_routes(&ex, &idx, &owned, &owned_relics(&st), &todo).into_iter().take(60).collect();
+
+    let mut missing_prices = vec![];
+    let mut plat: Vec<PlatRoute> = todo
+        .iter()
+        .filter(|i| !started.contains(i.unique_name.as_str()))
+        .filter_map(|it| {
+            let b = foundry::build(&ex, &idx, &owned, it);
+            let mut buy = vec![];
+            if b.blueprint.is_some() && b.bp_have == 0 {
+                buy.push((ex.item_name(b.blueprint.as_deref().unwrap()), b.bp_slug.clone()?));
+            }
+            for p in &b.parts {
+                if p.have + p.bp_have < p.need {
+                    // Not tradable (resources, non-prime parts): no plat route.
+                    let slug = p.slug.clone()?;
+                    for _ in 0..(p.need - p.have - p.bp_have) {
+                        buy.push((p.blueprint.as_deref().map(|x| ex.item_name(x)).unwrap_or(p.name.clone()), slug.clone()));
+                    }
+                }
+            }
+            if buy.is_empty() {
+                return None;
+            }
+            let missing: Vec<BuyPart> = buy
+                .into_iter()
+                .map(|(name, slug)| {
+                    let cached = st.market.cached_price(&slug);
+                    if cached.is_none() {
+                        missing_prices.push(slug.clone());
+                    }
+                    BuyPart { name, plat: cached.and_then(|(_, p)| p.sell), slug }
+                })
+                .collect();
+            let total = missing.iter().map(|m| m.plat).sum::<Option<u32>>();
+            Some(PlatRoute { unique_name: b.unique_name, name: b.name, category: b.category, image: b.image, missing, total })
+        })
+        .collect();
+    plat.sort_by_key(|r| r.total.unwrap_or(u32::MAX));
+    plat.truncate(120);
+
+    missing_prices.sort();
+    missing_prices.dedup();
+    let pending = missing_prices.len();
+    if pending > 0 && !MASTERY_WARMING.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        let app = app.clone();
+        tauri::async_runtime::spawn(async move {
+            let st = app.state::<AppState>();
+            for (i, slug) in missing_prices.iter().enumerate() {
+                let _ = st.market.price(slug).await;
+                if i % 10 == 9 || i + 1 == missing_prices.len() {
+                    use tauri::Emitter;
+                    let _ = app.emit("mastery-prices", (i + 1, missing_prices.len()));
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+            }
+            MASTERY_WARMING.store(false, std::sync::atomic::Ordering::SeqCst);
+        });
+    }
+
+    let skills: serde_json::Value = st.db.get("intrinsics").and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default();
+    let intrinsics = foundry::INTRINSICS
+        .iter()
+        .map(|(k, name)| Intrinsic { name: name.to_string(), rank: skills[*k].as_i64().unwrap_or(0) })
+        .collect();
+    Ok(MasteryRoutes { relics, plat, intrinsics, synced: !owned.is_empty(), pending })
+}
+
+// ---- Rivens (#11) ----
+
+static RIVEN_WEAPONS: parking_lot::Mutex<Vec<wfc_core::riven::RivenWeapon>> = parking_lot::Mutex::new(Vec::new());
+static WEEKLY: parking_lot::Mutex<Option<(std::time::Instant, Vec<wfc_core::riven::WeeklyRiven>)>> = parking_lot::Mutex::new(None);
+
+#[tauri::command]
+pub async fn riven_weapons(st: State<'_, AppState>) -> R<Vec<wfc_core::riven::RivenWeapon>> {
+    if RIVEN_WEAPONS.lock().is_empty() {
+        let list = wfc_core::riven::riven_weapons(&st.http).await.map_err(err)?;
+        *RIVEN_WEAPONS.lock() = list;
+    }
+    Ok(RIVEN_WEAPONS.lock().clone())
+}
+
+#[derive(Serialize)]
+pub struct RivenSearch {
+    pub auctions: Vec<wfc_core::riven::RivenAuction>,
+    pub prices: wfc_core::riven::RivenPrices,
+    /// DE numbers for the last weeks (unrolled and rerolled).
+    pub weekly: Vec<wfc_core::riven::WeeklyRiven>,
+}
+
+#[tauri::command]
+pub async fn riven_search(st: State<'_, AppState>, weapon: String, name: String) -> R<RivenSearch> {
+    let auctions = wfc_core::riven::riven_auctions(&st.http, &weapon).await.map_err(err)?;
+    let fresh = WEEKLY.lock().as_ref().is_some_and(|(t, _)| t.elapsed().as_secs() < 6 * 3600);
+    if !fresh {
+        match wfc_core::riven::weekly_rivens(&st.http).await {
+            Ok(w) => *WEEKLY.lock() = Some((std::time::Instant::now(), w)),
+            Err(e) => tracing::warn!("weekly rivens: {e}"),
+        }
+    }
+    let weekly = WEEKLY
+        .lock()
+        .as_ref()
+        .map(|(_, w)| w.iter().filter(|r| r.compatibility.as_deref().is_some_and(|c| c.eq_ignore_ascii_case(&name))).cloned().collect())
+        .unwrap_or_default();
+    let prices = wfc_core::riven::riven_prices(&auctions);
+    Ok(RivenSearch { auctions: auctions.into_iter().take(60).collect(), prices, weekly })
+}
+
+#[tauri::command]
+pub fn riven_snipes(st: State<AppState>) -> Vec<crate::watch::RivenSnipe> {
+    crate::watch::snipes(&st)
+}
+#[tauri::command]
+pub fn set_riven_snipes(st: State<AppState>, snipes: Vec<crate::watch::RivenSnipe>) -> R<()> {
+    st.db.set("riven_snipes", &serde_json::to_string(&snipes).map_err(err)?).map_err(err)
+}

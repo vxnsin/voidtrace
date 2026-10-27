@@ -228,6 +228,7 @@ pub fn run() {
             }
             connect_ws(&handle);
             watch::spawn(&handle);
+            watch::spawn_sniper(&handle);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -297,6 +298,14 @@ pub fn run() {
             commands::import_data,
             commands::market_stats,
             commands::relic_overview,
+            commands::foundry_overview,
+            commands::foundry_sources,
+            commands::inventory_sets,
+            commands::mastery_routes,
+            commands::riven_weapons,
+            commands::riven_search,
+            commands::riven_snipes,
+            commands::set_riven_snipes,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

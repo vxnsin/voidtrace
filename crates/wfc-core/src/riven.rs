@@ -145,3 +145,240 @@ pub fn grade(ex: &Export, weapon: &str, stats: &[StatInput]) -> RivenGrade {
         .collect();
     RivenGrade { weapon: weapon.to_string(), disposition: dispo, stats: graded }
 }
+
+// ---- Riven market: warframe.market auctions and DE weekly trade data ----
+
+use anyhow::Context;
+use serde_json::Value;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RivenWeapon {
+    pub slug: String,
+    pub name: String,
+    pub riven_type: String,
+    pub disposition: f32,
+    pub icon: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RivenAttr {
+    pub url_name: String,
+    pub value: f32,
+    pub positive: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RivenAuction {
+    pub id: String,
+    pub name: String,
+    pub buyout: Option<u32>,
+    pub starting: u32,
+    pub top_bid: Option<u32>,
+    pub direct: bool,
+    pub rerolls: u32,
+    pub mastery: u32,
+    pub polarity: String,
+    pub attributes: Vec<RivenAttr>,
+    pub owner: String,
+    pub owner_status: String,
+    pub created: String,
+}
+
+/// One row of DE's weekly riven trade statistics (www-static.warframe.com).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WeeklyRiven {
+    #[serde(rename = "itemType")]
+    pub item_type: String,
+    #[serde(default)]
+    pub compatibility: Option<String>,
+    #[serde(default)]
+    pub rerolled: bool,
+    #[serde(default)]
+    pub avg: f32,
+    #[serde(default)]
+    pub stddev: f32,
+    #[serde(default)]
+    pub min: f32,
+    #[serde(default)]
+    pub max: f32,
+    #[serde(default)]
+    pub pop: f32,
+    #[serde(default)]
+    pub median: f32,
+}
+
+fn wfm_get(http: &reqwest::Client, url: &str) -> reqwest::RequestBuilder {
+    http.get(url)
+        .header("Platform", "pc")
+        .header("Language", "en")
+        .header("Crossplay", "true")
+        .header("User-Agent", crate::market::USER_AGENT)
+}
+
+pub async fn riven_weapons(http: &reqwest::Client) -> anyhow::Result<Vec<RivenWeapon>> {
+    let v: Value = wfm_get(http, "https://api.warframe.market/v2/riven/weapons").send().await?.error_for_status()?.json().await?;
+    let list = v["data"].as_array().context("no riven weapons")?;
+    let mut out: Vec<RivenWeapon> = list
+        .iter()
+        .filter_map(|w| {
+            Some(RivenWeapon {
+                slug: w["slug"].as_str()?.to_string(),
+                name: w.pointer("/i18n/en/name")?.as_str()?.to_string(),
+                riven_type: w["rivenType"].as_str().unwrap_or("").to_string(),
+                disposition: w["disposition"].as_f64().unwrap_or(1.0) as f32,
+                icon: w.pointer("/i18n/en/icon").and_then(Value::as_str).unwrap_or("").to_string(),
+            })
+        })
+        .collect();
+    out.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(out)
+}
+
+/// Direct-sell (buyout) riven auctions for a weapon, cheapest first. This is
+/// the contract search the site uses (v1); keep calls rare.
+pub async fn riven_auctions(http: &reqwest::Client, weapon: &str) -> anyhow::Result<Vec<RivenAuction>> {
+    let url = format!(
+        "https://api.warframe.market/v1/auctions/search?type=riven&weapon_url_name={weapon}&sort_by=price_asc&buyout_policy=direct"
+    );
+    let v: Value = wfm_get(http, &url).send().await?.error_for_status()?.json().await?;
+    let list = v.pointer("/payload/auctions").and_then(Value::as_array).context("no auctions in answer")?;
+    Ok(list
+        .iter()
+        .filter(|a| a["visible"].as_bool() != Some(false) && a["closed"].as_bool() != Some(true))
+        .filter_map(|a| {
+            let it = &a["item"];
+            Some(RivenAuction {
+                id: a["id"].as_str()?.to_string(),
+                name: it["name"].as_str().unwrap_or("").to_string(),
+                buyout: a["buyout_price"].as_u64().map(|x| x as u32),
+                starting: a["starting_price"].as_u64().unwrap_or(0) as u32,
+                top_bid: a["top_bid"].as_u64().map(|x| x as u32),
+                direct: a["is_direct_sell"].as_bool().unwrap_or(false),
+                rerolls: it["re_rolls"].as_u64().unwrap_or(0) as u32,
+                mastery: it["mastery_level"].as_u64().unwrap_or(0) as u32,
+                polarity: it["polarity"].as_str().unwrap_or("").to_string(),
+                attributes: it["attributes"]
+                    .as_array()
+                    .map(|x| {
+                        x.iter()
+                            .filter_map(|t| {
+                                Some(RivenAttr {
+                                    url_name: t["url_name"].as_str()?.to_string(),
+                                    value: t["value"].as_f64().unwrap_or(0.0) as f32,
+                                    positive: t["positive"].as_bool().unwrap_or(true),
+                                })
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default(),
+                owner: a.pointer("/owner/ingame_name").and_then(Value::as_str).unwrap_or("").to_string(),
+                owner_status: a.pointer("/owner/status").and_then(Value::as_str).unwrap_or("").to_string(),
+                created: a["created"].as_str().unwrap_or("").to_string(),
+            })
+        })
+        .collect())
+}
+
+pub async fn weekly_rivens(http: &reqwest::Client) -> anyhow::Result<Vec<WeeklyRiven>> {
+    let text = http.get("https://www-static.warframe.com/repos/weeklyRivensPC.json").send().await?.error_for_status()?.text().await?;
+    Ok(serde_json::from_str(&text)?)
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AttrPrice {
+    pub url_name: String,
+    pub count: usize,
+    pub median: f32,
+    /// Median of auctions with this positive stat over the median of all.
+    pub ratio: f32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct RivenPrices {
+    pub count: usize,
+    pub median: f32,
+    /// Mean after dropping outliers (outside 1.5 IQR).
+    pub trimmed_avg: f32,
+    pub low: f32,
+    pub high: f32,
+    pub attrs: Vec<AttrPrice>,
+}
+
+fn median(v: &mut [f32]) -> f32 {
+    if v.is_empty() {
+        return 0.0;
+    }
+    v.sort_by(|a, b| a.total_cmp(b));
+    v[v.len() / 2]
+}
+
+/// Price picture from current buyout auctions: the middle of the market
+/// without outliers, and which positive stats come with higher prices.
+pub fn riven_prices(auctions: &[RivenAuction]) -> RivenPrices {
+    let mut prices: Vec<f32> = auctions.iter().filter_map(|a| a.buyout).map(|p| p as f32).collect();
+    if prices.is_empty() {
+        return RivenPrices::default();
+    }
+    prices.sort_by(|a, b| a.total_cmp(b));
+    let q = |f: f32| prices[((prices.len() - 1) as f32 * f).round() as usize];
+    let (q1, q3) = (q(0.25), q(0.75));
+    let (lo, hi) = (q1 - 1.5 * (q3 - q1), q3 + 1.5 * (q3 - q1));
+    let kept: Vec<f32> = prices.iter().copied().filter(|p| *p >= lo && *p <= hi).collect();
+    let all_median = median(&mut prices.clone());
+    let mut by_attr: std::collections::HashMap<&str, Vec<f32>> = Default::default();
+    for a in auctions {
+        let Some(p) = a.buyout else { continue };
+        for t in a.attributes.iter().filter(|t| t.positive) {
+            by_attr.entry(t.url_name.as_str()).or_default().push(p as f32);
+        }
+    }
+    let mut attrs: Vec<AttrPrice> = by_attr
+        .into_iter()
+        .filter(|(_, v)| v.len() >= 3)
+        .map(|(k, mut v)| {
+            let m = median(&mut v);
+            AttrPrice { url_name: k.to_string(), count: v.len(), median: m, ratio: if all_median > 0.0 { m / all_median } else { 1.0 } }
+        })
+        .collect();
+    attrs.sort_by(|a, b| b.ratio.total_cmp(&a.ratio));
+    RivenPrices {
+        count: prices.len(),
+        median: all_median,
+        trimmed_avg: kept.iter().sum::<f32>() / kept.len().max(1) as f32,
+        low: kept.first().copied().unwrap_or(0.0),
+        high: kept.last().copied().unwrap_or(0.0),
+        attrs,
+    }
+}
+
+#[cfg(test)]
+mod market_tests {
+    use super::*;
+
+    fn auc(p: u32, attrs: &[&str]) -> RivenAuction {
+        RivenAuction {
+            id: p.to_string(),
+            name: String::new(),
+            buyout: Some(p),
+            starting: p,
+            top_bid: None,
+            direct: true,
+            rerolls: 0,
+            mastery: 8,
+            polarity: String::new(),
+            owner: String::new(),
+            owner_status: String::new(),
+            created: String::new(),
+            attributes: attrs.iter().map(|a| RivenAttr { url_name: a.to_string(), value: 1.0, positive: true }).collect(),
+        }
+    }
+
+    #[test]
+    fn outliers_do_not_move_the_average() {
+        let mut a: Vec<RivenAuction> = (0..9).map(|i| auc(100 + i * 5, &["multishot"])).collect();
+        a.push(auc(20000, &["zoom"]));
+        let p = riven_prices(&a);
+        assert!(p.trimmed_avg < 200.0, "{}", p.trimmed_avg);
+        assert_eq!(p.count, 10);
+    }
+}

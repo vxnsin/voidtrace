@@ -161,3 +161,65 @@ pub fn on_new_order(app: &AppHandle, payload: &Value) {
         .item(&st, &a.slug);
     notify::send(app, n);
 }
+
+// ---- Riven sniper (#11) ----
+
+/// A saved riven search: weapon, positive stats that must all be there, and
+/// the most I would pay.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RivenSnipe {
+    pub weapon: String,
+    pub name: String,
+    #[serde(default)]
+    pub positives: Vec<String>,
+    #[serde(default)]
+    pub negative: Option<String>,
+    pub max: u32,
+}
+
+pub fn snipes(st: &AppState) -> Vec<RivenSnipe> {
+    st.db.get("riven_snipes").and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default()
+}
+
+fn snipe_matches(s: &RivenSnipe, a: &wfc_core::riven::RivenAuction) -> bool {
+    a.buyout.is_some_and(|p| p <= s.max)
+        && s.positives.iter().all(|p| a.attributes.iter().any(|t| t.positive && &t.url_name == p))
+        && s.negative.as_ref().is_none_or(|n| a.attributes.iter().any(|t| !t.positive && &t.url_name == n))
+}
+
+/// Every 5 minutes, one search per saved snipe, two seconds apart (the site
+/// asks for gentle contract searches). Auctions seen on the first pass of a
+/// snipe are not announced; only new ones are.
+pub fn spawn_sniper(app: &AppHandle) {
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let mut seen: HashSet<String> = HashSet::new();
+        let mut first: HashSet<String> = HashSet::new();
+        loop {
+            tokio::time::sleep(Duration::from_secs(90)).await;
+            let st = app.state::<AppState>();
+            for s in snipes(&st) {
+                match wfc_core::riven::riven_auctions(&st.http, &s.weapon).await {
+                    Ok(list) => {
+                        let fresh = first.insert(format!("{}|{:?}|{:?}|{}", s.weapon, s.positives, s.negative, s.max));
+                        for a in list.iter().filter(|a| snipe_matches(&s, a)) {
+                            if seen.insert(a.id.clone()) && !fresh {
+                                let stats: Vec<&str> = a.attributes.iter().filter(|t| t.positive).map(|t| t.url_name.as_str()).collect();
+                                let mut n = Notice::new(
+                                    "riven",
+                                    format!("{} {} for {}p", s.name, a.name, a.buyout.unwrap_or(0)),
+                                    format!("{} · {} rerolls · {}", stats.join(", ").replace('_', " "), a.rerolls, a.owner),
+                                );
+                                n.url = Some(format!("https://warframe.market/auction/{}", a.id));
+                                notify::send(&app, n);
+                            }
+                        }
+                    }
+                    Err(e) => tracing::warn!("riven sniper {}: {e}", s.weapon),
+                }
+                tokio::time::sleep(Duration::from_secs(2)).await;
+            }
+            tokio::time::sleep(Duration::from_secs(210)).await;
+        }
+    });
+}

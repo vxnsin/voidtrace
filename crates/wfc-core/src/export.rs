@@ -28,6 +28,8 @@ pub struct ExportItem {
     pub disposition: f32,
     #[serde(default, rename = "totalDamage")]
     pub total_damage: f32,
+    #[serde(default, rename = "masteryReq")]
+    pub mastery_req: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -64,16 +66,29 @@ struct Resource {
     name: String,
 }
 
-#[derive(Debug, Clone, Deserialize)]
-struct Recipe {
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Ingredient {
+    #[serde(rename = "ItemType")]
+    pub item_type: String,
+    #[serde(rename = "ItemCount")]
+    pub count: i64,
+}
+
+/// A foundry blueprint: what it builds and from what.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Recipe {
     #[serde(rename = "uniqueName")]
-    unique_name: String,
+    pub unique_name: String,
     #[serde(rename = "resultType")]
-    result_type: String,
+    pub result_type: String,
+    #[serde(default)]
+    pub ingredients: Vec<Ingredient>,
+    #[serde(default, rename = "buildPrice")]
+    pub build_price: i64,
 }
 
 /// Bump when the cached shape changes so stale caches are refetched.
-const CACHE_VERSION: u32 = 2;
+const CACHE_VERSION: u32 = 3;
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct Export {
@@ -90,6 +105,9 @@ pub struct Export {
     /// Blueprint recipes resolve to "<result> Blueprint", matching warframe.market.
     #[serde(default)]
     pub item_names: HashMap<String, String>,
+    /// Blueprints of masterable items and their components.
+    #[serde(default)]
+    pub recipes: Vec<Recipe>,
 }
 
 const MASTERABLE_CATEGORIES: &[&str] = &[
@@ -256,6 +274,10 @@ impl Export {
             relics,
             images,
             item_names,
+            recipes: recipes
+                .into_iter()
+                .filter(|r| !r.ingredients.is_empty())
+                .collect(),
         };
         std::fs::write(Self::cache_path(), serde_json::to_string(&ex)?)?;
         Ok(ex)

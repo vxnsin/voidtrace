@@ -144,6 +144,14 @@ pub async fn sync_inventory(app: &AppHandle) -> anyhow::Result<crate::commands::
     if let Ok(s) = serde_json::to_string(&relics) {
         let _ = st.db.set("owned_relics", &s);
     }
+    // Every path with its count (foundry, sets, mastery routes) and intrinsics.
+    let owned: std::collections::HashMap<&str, i64> = snap.items.iter().map(|i| (i.path.as_str(), i.count)).collect();
+    if let Ok(s) = serde_json::to_string(&owned) {
+        let _ = st.db.set("owned_items", &s);
+    }
+    if let Some(skills) = v.get("PlayerSkills") {
+        let _ = st.db.set("intrinsics", &skills.to_string());
+    }
     st.db.add_datapoint(&wfc_core::db::Datapoint {
         ts: chrono::Utc::now().timestamp(),
         platinum: snap.platinum as i32,
