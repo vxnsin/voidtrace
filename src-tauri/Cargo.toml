@@ -16,6 +16,7 @@ wfc-core = { path = "../crates/wfc-core" }
 tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-opener = "2"
+tauri-plugin-autostart = "2"
 anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true

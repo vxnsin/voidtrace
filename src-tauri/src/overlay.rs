@@ -76,6 +76,15 @@ pub async fn sync_inventory(app: &AppHandle) -> anyhow::Result<crate::commands::
         credits: snap.credits,
     })?;
     let _ = st.db.set("inventory_synced_at", &chrono::Utc::now().timestamp().to_string());
+    // The document also carries XPInfo: mastery without an account id.
+    let name = st.player.read().clone().or_else(|| st.db.get("player_name")).unwrap_or_default();
+    if let Some(p) = wfc_core::profile::from_inventory(&v, &name) {
+        if let Ok(s) = serde_json::to_string(&p) {
+            let _ = st.db.set("profile_cache", &s);
+            let _ = st.db.set("profile_source", "game");
+            let _ = app.emit("mastery-updated", ());
+        }
+    }
     let res = crate::commands::SyncResult {
         platinum: snap.platinum,
         credits: snap.credits,
@@ -136,12 +145,33 @@ fn auto_activity(app: &AppHandle, kind: &str, details: Option<String>) {
     });
 }
 
+/// Game closed: drop out of "ingame" so buyers stop whispering a player who is
+/// gone. `wfm_status_on_exit` picks invisible (default), online or keep.
+fn exit_status(app: &AppHandle) {
+    let st = app.state::<AppState>();
+    if st.db.get("wfm_auto_activity").as_deref() == Some("0") {
+        return;
+    }
+    let status = st.db.get("wfm_status_on_exit").unwrap_or_else(|| "invisible".into());
+    if status == "keep" {
+        return;
+    }
+    let Some(sock) = st.ws.read().clone() else { return };
+    tauri::async_runtime::spawn(async move {
+        if let Err(e) = sock.set_status(&status, None, None).await {
+            tracing::warn!("wfm status: {e}");
+        }
+    });
+}
+
 pub async fn on_event(app: &AppHandle, ev: GameEvent) {
     let st = app.state::<AppState>();
     match &ev {
         GameEvent::LoggedIn { .. } => auto_activity(app, "IN_ORBITER", None),
         GameEvent::MissionStart { name } => auto_activity(app, "ON_MISSION", Some(name.clone())),
         GameEvent::MissionEnd => auto_activity(app, "IN_ORBITER", None),
+        GameEvent::GameClosed => exit_status(app),
+        GameEvent::GameStarted if st.db.get("launch_with_game").as_deref() == Some("1") => crate::show_main(app),
         _ => {}
     }
     match ev {
@@ -184,7 +214,7 @@ pub async fn on_event(app: &AppHandle, ev: GameEvent) {
                 run_ocr(app).await;
             }
         }
-        GameEvent::RewardDone => hide(app),
+        GameEvent::RewardDone | GameEvent::GameClosed => hide(app),
         _ => {}
     }
 }

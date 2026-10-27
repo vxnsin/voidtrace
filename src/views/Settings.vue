@@ -11,6 +11,14 @@ function setIntro(m: "full" | "quick" | "off") {
   introMode.value = m;
   try { localStorage.setItem("intro_mode", m); } catch {}
 }
+const launchWithGame = ref(false);
+async function rerunSetup() { await api.setSetting("setup_done", "0"); window.location.reload(); }
+async function toggleLaunch() {
+  try {
+    await api.setLaunchWithGame(!launchWithGame.value);
+    launchWithGame.value = !launchWithGame.value;
+  } catch (e) { msg.value = String(e); }
+}
 const rawLog = ref(false);
 const crop = ref({ x: 0.18, y: 0.4, w: 0.64, h: 0.14 });
 const patterns = ref("");
@@ -21,6 +29,7 @@ async function load() {
   try { introMode.value = (localStorage.getItem("intro_mode") as typeof introMode.value) || "full"; } catch {}
   overlay.value = (await api.getSetting("overlay_enabled")) !== "0";
   memorySync.value = (await api.getSetting("memory_sync")) === "1";
+  launchWithGame.value = (await api.getSetting("launch_with_game")) === "1";
   rawLog.value = (await api.getSetting("log_raw")) === "1";
   const c = await api.getSetting("ocr_crop"); if (c) crop.value = JSON.parse(c);
   patterns.value = (await api.getSetting("log_patterns")) ?? "";
@@ -54,6 +63,9 @@ onMounted(load);
       </div>
       <span class="muted">Esc skips it any time. Applies on next start.</span>
     </div>
+    <div class="row" style="margin-top:10px"><button class="btn" @click="rerunSetup">Run setup again</button></div>
+    <label class="row" style="margin-top:10px"><input type="checkbox" :checked="launchWithGame" @change="toggleLaunch" /> Launch with Warframe</label>
+    <p class="muted" style="margin:6px 0 0">Starts hidden in the tray when you sign in to Windows and opens as soon as Warframe starts. Closing the window keeps it in the tray; quit from the tray icon.</p>
   </div>
   <div class="card">
     <h2 style="margin-top:0">Overlay</h2>

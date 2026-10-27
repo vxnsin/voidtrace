@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
-import { api, fmtTs, type Datapoint, type RelicRun, type Trade } from "../api";
+import { api, fmtTs, tradePrompt, type Datapoint, type RelicRun, type Trade } from "../api";
 
 const points = ref<Datapoint[]>([]);
 const trades = ref<Trade[]>([]);
@@ -15,6 +15,7 @@ async function load() {
 }
 async function saveDp() { await api.addDatapoint(dp.value.platinum, dp.value.ducats, dp.value.credits); await load(); }
 async function saveTrade() { await api.addTrade(nt.value); nt.value = { item: "", quantity: 1, platinum: 0, direction: "sell", partner: "" }; await load(); }
+function fromListing() { tradePrompt.value = { onDone: load }; }
 async function del(id: number) { await api.deleteTrade(id); await load(); }
 
 const earned = computed(() => trades.value.filter((t) => t.direction === "sell").reduce((s, t) => s + t.platinum, 0));
@@ -55,7 +56,8 @@ onMounted(load);
     <input type="number" v-model.number="nt.platinum" placeholder="plat" style="width:80px" />
     <input v-model="nt.partner" placeholder="Partner" style="width:140px" />
     <button class="btn primary" @click="saveTrade">Add</button>
-    <span class="muted">Trades complete in game show up as an event; we can't read the trade contents, so fill in the item and price here.</span>
+    <button class="btn" @click="fromListing">From a listing…</button>
+    <span class="muted">A finished in-game trade opens a dialog: pick the listing and it is closed on warframe.market, logged here and taken off the inventory.</span>
   </div>
   <table style="margin-top:8px">
     <thead><tr><th>When</th><th></th><th>Item</th><th>Qty</th><th>Plat</th><th>Partner</th><th></th></tr></thead>

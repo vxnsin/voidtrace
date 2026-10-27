@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- VoidTrace mark: a V with Orokin cuts, a crimson T wedge and the trace line. -->
+  <rect x="32" y="32" width="960" height="960" rx="168" fill="#070708"/>
+  <path d="M210 250 H392 L512 600 L632 250 H814 L756 330 H690 L540 774 H484 L334 330 H268 Z" fill="#e8e8e8"/>
+  <path d="M512 250 H580 L548 340 H476 L444 250 Z" fill="#c8102e"/>
+  <path d="M190 840 H834" stroke="#3a3a40" stroke-width="18"/>
+</svg>

@@ -1,7 +1,11 @@
 <script setup lang="ts">
 import { onMounted, ref, shallowRef } from "vue";
-import { api, type Status, type GameEvent } from "./api";
+import { getVersion } from "@tauri-apps/api/app";
+import { api, listingPrompt, tradePrompt, type Status, type GameEvent } from "./api";
 import Intro from "./intro/Intro.vue";
+import TradeDialog from "./components/TradeDialog.vue";
+import NewListing from "./components/NewListing.vue";
+import Setup from "./components/Setup.vue";
 import Foundry from "./views/Foundry.vue";
 import Inventory from "./views/Inventory.vue";
 import Mastery from "./views/Mastery.vue";
@@ -29,6 +33,9 @@ const status = ref<Status | null>(null);
 const lastEvent = ref("");
 const intro = ref(true);
 const clock = ref("");
+const version = ref("");
+const setup = ref(false);
+function setupDone() { setup.value = false; refresh(); }
 
 function go(id: string) {
   active.value = id;
@@ -43,10 +50,13 @@ function tick() {
 onMounted(async () => {
   await refresh();
   tick();
+  version.value = (await getVersion()).replace(/\.0$/, "");
+  setup.value = (await api.getSetting("setup_done")) !== "1";
   api.on("ready", refresh);
   api.on<GameEvent>("game-event", (e) => {
     lastEvent.value = e.kind + (e.name ? ` ${e.name}` : "") + (e.relic ? ` ${e.relic}` : "");
     if (e.kind === "logged_in") refresh();
+    if (e.kind === "trade_complete" && !tradePrompt.value) tradePrompt.value = {};
   });
   setInterval(refresh, 10000);
   setInterval(tick, 1000);
@@ -57,7 +67,7 @@ onMounted(async () => {
   <Intro v-if="intro" :backend-ok="!!status" @done="intro = false" />
   <div class="shell" :class="{ boot: !intro }">
     <nav class="nav">
-      <div class="brand"><b>VOIDTRACE</b> / v0.1<br /><span class="dim">tenno companion · no overwolf</span></div>
+      <div class="brand"><b>VOIDTRACE</b> / v{{ version }}<br /><span class="dim">tenno companion</span></div>
       <button v-for="t in tabs" :key="t.id" :class="{ active: active === t.id }" @click="go(t.id)">{{ t.label }}</button>
       <div class="foot" v-if="status">
         <div><span class="dot" :class="{ on: status.ee_log_exists }"></span>ee.log</div>
@@ -73,6 +83,9 @@ onMounted(async () => {
       <component :is="current" :status="status" @refresh="refresh" />
     </main>
   </div>
+  <Setup v-if="!intro && setup" @done="setupDone" />
+  <TradeDialog v-if="tradePrompt" />
+  <NewListing v-if="listingPrompt" />
 </template>
 
 <style scoped>

@@ -73,7 +73,7 @@ onUnmounted(() => clearInterval(poll));
           <button class="btn primary" @click="send">Send</button>
         </div>
       </template>
-      <p v-else class="muted">Pick a chat. Polls every 15 s (the public socket does not expose chat events).</p>
+      <p v-else class="muted">Pick a chat. The list refreshes every 15 s.</p>
     </div>
   </div>
 </template>

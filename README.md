@@ -1,54 +1,71 @@
-# VOIDTRACE
+<div align="center">
 
-```
- ▄▄ ▄▄  ▄▄▄  ▄▄ ▄▄▄▄   ▄▄▄▄▄ ▄▄▄▄   ▄▄▄   ▄▄▄▄ ▄▄▄▄▄
- ██ ██ ██ ██ ██ ██ ██    ██  ██ ██ ██ ██ ██    ██
- ██▄██ ██ ██ ██ ██ ██    ██  ████  █████ ██    ████
-  ███   ▀█▀  ██ ████     ██  ██ ██ ██ ██  ▀███ ██▄▄▄
-```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/wordmark-dark.svg">
+  <img src="docs/wordmark-light.svg" alt="VoidTrace" width="460">
+</picture>
 
-Warframe companion. Everything AlecaFrame does — without Overwolf, without ads, without a subscription.
-Rust core, Tauri shell, Vue UI, terminal aesthetic.
+A Warframe companion for Windows. Relic prices on screen, your warframe.market account,
+mastery and trades in one window — without Overwolf, ads or a subscription.
 
-> Status: working prototype, PC only. Built for my own account; use at your own risk (see [What it touches](#what-it-touches)).
+![version](https://img.shields.io/badge/version-0.2.0-c8102e?style=flat-square)
+![platform](https://img.shields.io/badge/Windows-10%20%2F%2011-1d1d21?style=flat-square)
+![stack](https://img.shields.io/badge/Rust%20%C2%B7%20Tauri%20%C2%B7%20Vue-1d1d21?style=flat-square)
+![license](https://img.shields.io/badge/license-MIT-1d1d21?style=flat-square)
 
-## Features
+[How it works](#how-it-works) · [What it touches](#what-it-touches) · [Build](#build)
 
-| Tab | What it does | Data source |
-|---|---|---|
-| **Foundry** | Every masterable item with your XP, mastered / owned / missing | DE PublicExport + DE profile endpoint |
-| **Inventory** | Your tradeable parts, mods, relics with live sell/buy/ducat values, one-click listing | Game process (opt-in) or manual |
-| **Mastery** | MR progress, points to next rank, unmastered items closest first | DE profile endpoint |
-| **Relic Planner** | Which relics drop item X, expected plat/ducats per refinement | PublicExport drop tables + warframe.market |
-| **Riven Explorer** | Grade a riven against the roll range at the weapon's current disposition | PublicExport dispositions |
-| **Stats / Trading** | Plat/ducat/credit history, trade log, relic run log | Inventory sync + manual |
-| **Warframe.Market** | Login, your listings (edit/toggle/delete), price check with order book, online status + activity | warframe.market API v2 + WebSocket |
-| **WFM Chat** | Your warframe.market conversations in the app | warframe.market API v1 (undocumented) |
-| **Overlay** | Relic reward HUD: plat + ducats per card, best pick highlighted, click-through, always on top | EE.log trigger + Windows OCR |
+<img src="docs/screenshot.png" alt="VoidTrace relic planner" width="880">
 
-Plus an ASCII intro sequence (Full / Quick / Off), hover cards with icons and prices on every item, and links straight to the item on warframe.market.
+</div>
+
+When a relic reward screen opens, VoidTrace reads the four cards with Windows' own OCR and
+puts plat and ducat values above them, best pick marked. The relic planner works the other
+way round: name the part you want and it lists the relics that drop it and what each
+refinement is worth on average.
+
+Your warframe.market account lives in the app. Sell straight from your inventory at the
+cheapest online price or post a buy order, edit and hide listings, read your chats. When a
+trade finishes in game, VoidTrace asks which listing it was, closes the order on the market,
+logs the sale and takes it off your inventory. Your market status follows the game — in a
+mission, in the orbiter, and invisible once you quit, so nobody whispers a player who left.
+
+If you allow it to read the inventory from the game (see below), mastery, foundry, plat and
+ducat history come straight from your account, no account id needed. It can start with
+Windows, wait in the tray and open when Warframe does. On first start a short setup walks
+through all of this and tests the parts that usually break.
 
 ## How it works
 
 ```
 EE.log ──tail──▶ events ──▶ "Got rewards" ──▶ screenshot ──▶ Windows OCR ──▶ prices ──▶ overlay
                    │
-                   ├─▶ "Logged in" / EOM ──▶ memory scan ──▶ inventory ledger + datapoint
-                   │
-                   └─▶ mission start/end ──▶ warframe.market status (ON_MISSION / IN_ORBITER)
+                   ├─▶ login / mission end ──▶ memory read ──▶ inventory · mastery · history
+                   ├─▶ mission start / end ──▶ warframe.market status
+                   └─▶ trade complete ──▶ pick listing ──▶ close order · log trade · ledger
+
+process watcher ──▶ game started ──▶ open from tray
+                └─▶ game closed  ──▶ status invisible
 ```
 
-- **PublicExport** is fetched once per DE content hash and cached (`%LOCALAPPDATA%\VoidTrace\export.json`). Internal codenames (`PolearmPrimeBlueprint`) are resolved through `ExportRecipes → resultType`, so relic rewards show up as "Orthos Prime Blueprint" and match warframe.market.
-- **Log patterns** are verified against a real `EE.log` and covered by a test; they can be overridden in Settings when DE renames something.
-- **OCR** uses the Windows built-in engine, nothing to install. The reward row crop is configurable for non-16:9 screens.
-- **warframe.market** login goes through the v1 flow (v2 sign-in is first-party only); the token is reused for v2 REST and the `wfm` WebSocket.
+Game data comes from DE's PublicExport, fetched once per content hash and cached in
+`%LOCALAPPDATA%\VoidTrace`. Internal names are resolved through the recipes, so a relic reward
+shows up as "Orthos Prime Blueprint" and matches warframe.market. Log patterns are tested
+against a real `EE.log` and can be overridden in Settings when DE renames something. The
+market side uses the v2 API and WebSocket; login still goes through v1, because third-party
+OAuth isn't open yet.
 
 ## What it touches
 
-- `EE.log` — read only.
-- Screen — one screenshot per relic reward screen.
-- **Game process memory — opt-in, read only.** The inventory document the game receives at login is located by pattern (no offsets, no hooks, no injection, nothing written) with `ReadProcessMemory`. This is the same data Overwolf companions read, but outside Overwolf it is not covered by DE's third-party policy. It is off by default; enable it in *Settings → Inventory sync* if you accept that.
-- Nothing is sent anywhere except api.warframe.market (your own account) and DE's public endpoints.
+`EE.log` is only read. The screen is captured once per relic reward screen. Nothing is sent
+anywhere except to api.warframe.market (your own account) and DE's public endpoints.
+
+> [!IMPORTANT]
+> Reading the inventory from the game process is **off by default**. When you turn it on,
+> VoidTrace locates the inventory document the game received at login and reads it with
+> `ReadProcessMemory` — no injection, no hooks, no offsets, nothing written. Overwolf
+> companions read the same data, but outside Overwolf it is not covered by DE's third-party
+> policy. Your call.
 
 ## Build
 
@@ -59,30 +76,48 @@ npm install
 npm run tauri dev        # or: npm run tauri build
 ```
 
-Requirements: Windows 10/11, WebView2, Warframe in **Borderless Fullscreen**, game language English, same privilege level as the game (no "run as administrator" on either side).
+Warframe should run in **Borderless Fullscreen** (exclusive fullscreen hides every overlay)
+with the game language set to English, and VoidTrace at the same privilege level as the game.
 
-Useful checks:
+<details>
+<summary>Checks</summary>
 
 ```
-cargo test -p wfc-core                              # log patterns, memory scanner
-cargo run -p wfc-core --example smoke               # export + market + relic plan + riven grade
-cargo run --release -p wfc-core --example scan_watch  # poll the running game for the inventory document
+cargo test -p wfc-core                                 # log patterns, memory scanner, market types
+cargo run -p wfc-core --example smoke                  # export + market + relic plan + riven grade
+cargo run --release -p wfc-core --example scan_watch   # poll the running game for the inventory
 ```
 
-## Layout
+</details>
+
+<details>
+<summary>Settings worth knowing</summary>
+
+**Launch with Warframe** registers VoidTrace to start with Windows in the tray; closing the
+window keeps it there, quit from the tray icon.
+
+**Account id** is only needed for mastery without the inventory read: log in at warframe.com,
+open `www.warframe.com/api/user-data` and copy `user_id`. Don't spam it — DE rate-limits by IP.
+
+**Reward crop** sets where the OCR looks, in fractions of the screen; *Test OCR now* and
+*Preview overlay* help tune it for non-16:9 screens.
+
+**Intro** runs Full (8 s), Quick (2 s) or Off; Esc skips it.
+
+</details>
+
+<details>
+<summary>Layout</summary>
 
 ```
 crates/wfc-core/   export · market · ws · log · profile · memory · inventory · ocr · relic · mastery · riven · db
-src-tauri/         app state, commands, overlay window, event wiring
-src/               Vue: intro, 9 tabs, overlay page, ItemLink hover card
+src-tauri/         app state, commands, tray, overlay window, event wiring
+src/               Vue: intro, setup, tabs, dialogs, overlay page
 ```
 
-## Settings worth knowing
+</details>
 
-- **Account id** (Mastery tab): DE's profile endpoint needs it since U38.0.8. Log in at warframe.com, open `www.warframe.com/api/user-data`, copy `user_id`. Don't spam it — DE rate-limits by IP.
-- **Reward crop** (Settings): fractions of the screen; *Test OCR now* and *Preview overlay* exist to tune it.
-- **Intro**: Full 8s / Quick 2s / Off, Esc skips.
+---
 
-## License
-
-MIT
+<sub>VoidTrace is a fan project and not affiliated with or endorsed by Digital Extremes.
+Warframe and the Lotus emblem are trademarks of Digital Extremes Ltd. · MIT licensed.</sub>
