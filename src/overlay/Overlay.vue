@@ -80,7 +80,19 @@ function tileDown(e: PointerEvent, id: WidgetId) {
   window.addEventListener("pointerup", upEv, { once: true });
 }
 
-async function moved(id: string, pos: { anchor: number; x: number; y: number }) {
+// Dragging a widget back up into the palette removes it.
+const palette = ref<HTMLElement | null>(null);
+const overPalette = ref(false);
+function inPalette(p: { x: number; y: number }) {
+  const r = palette.value?.getBoundingClientRect();
+  return !!r && p.x >= r.left && p.x <= r.right && p.y >= r.top && p.y <= r.bottom;
+}
+function dragging(id: string | null, p: { x: number; y: number }) {
+  overPalette.value = !!id && inPalette(p);
+}
+async function moved(id: string, pos: { anchor: number; x: number; y: number }, p: { x: number; y: number }) {
+  overPalette.value = false;
+  if (inPalette(p)) return remove(id as WidgetId);
   await update(id as WidgetId, pos);
 }
 const done = () => { sel.value = null; api.overlayEdit(false); };
@@ -105,20 +117,22 @@ onMounted(async () => {
 </script>
 
 <template>
-  <WidgetLayer :items="shown" :editable="edit" :selected="sel" @select="sel = $event as WidgetId" @move="moved">
+  <WidgetLayer :items="shown" :editable="edit" :selected="sel" @select="sel = $event as WidgetId" @move="moved" @drag="dragging">
     <template v-if="edit">
       <!-- palette -->
-      <div class="palette" @pointerdown.stop>
+      <div ref="palette" class="palette" :class="{ drop: overPalette }" @pointerdown.stop>
+        <div v-if="overPalette" class="dropmsg">Drop here to remove</div>
         <div class="head">
           <b>WIDGETS</b>
           <div class="cats"><button v-for="c in CATEGORIES" :key="c" :class="{ on: cat === c }" @click="cat = c">{{ c }}</button></div>
-          <span class="hint">drag onto the screen · click a widget to edit · {{ hotkey }} / Esc to finish</span>
+          <span class="hint">drag in to add · drag back up to remove · hold Alt to snap · {{ hotkey }} / Esc to finish</span>
           <button class="act" :class="{ on: sel === null }" @click="sel = null">All widgets</button>
           <button class="act done" @click="done">Done</button>
         </div>
         <div class="tiles">
           <div v-for="m in WIDGETS.filter((w) => w.cat === cat)" :key="m.id" class="tile" :class="{ pinned: byId(m.id)?.pinned, sel: sel === m.id }" @pointerdown.prevent="tileDown($event, m.id)">
             <b>{{ m.name }}</b><span>{{ m.desc }}</span><i>{{ byId(m.id)?.pinned ? "on screen" : "drag in" }}</i>
+            <button v-if="byId(m.id)?.pinned" class="x" title="Remove from screen" @pointerdown.stop @click.stop="remove(m.id)">×</button>
           </div>
         </div>
       </div>
@@ -166,6 +180,11 @@ onMounted(async () => {
 .tile i { font-style: normal; color: #4e4e52; font-size: 10px; text-transform: uppercase; letter-spacing: .1em; }
 .tile.pinned { border-style: solid; } .tile.pinned i { color: #b89a5a; }
 .tile.sel { border-color: #c8102e; }
+.tile { position: relative; }
+.tile .x { all: unset; position: absolute; top: 4px; right: 6px; cursor: pointer; color: #6a6a70; font-size: 14px; line-height: 1; padding: 2px 4px; }
+.tile .x:hover { color: #c8102e; }
+.palette.drop { background: rgba(60, 6, 16, .95); }
+.dropmsg { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #e8e8e8; letter-spacing: .2em; text-transform: uppercase; font-size: 12px; background: rgba(200, 16, 46, .25); z-index: 2; pointer-events: none; }
 .panel { position: absolute; right: 16px; top: 50%; transform: translateY(-50%); width: 320px; background: rgba(7, 7, 8, .95); border: 1px solid #c8102e; padding: 12px; z-index: 20; }
 .ph { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
 .ph b { color: #e8e8e8; letter-spacing: .12em; text-transform: uppercase; font: 500 11px var(--mono); }
