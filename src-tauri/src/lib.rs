@@ -17,6 +17,9 @@ pub struct AppState {
     pub current_relic: Arc<RwLock<Option<String>>>,
     pub ws: Arc<RwLock<Option<wfc_core::ws::Socket>>>,
     pub wfm_status: Arc<RwLock<Option<wfc_core::ws::RichStatus>>>,
+    pub worldstate: Arc<RwLock<Option<serde_json::Value>>>,
+    pub overlay_edit: Arc<RwLock<bool>>,
+    pub hotkey: Arc<RwLock<Option<String>>>,
 }
 
 /// (Re)connect the warframe.market socket with the current token and forward
@@ -100,6 +103,9 @@ pub fn run() {
         current_relic: Arc::new(RwLock::new(None)),
         ws: Arc::new(RwLock::new(None)),
         wfm_status: Arc::new(RwLock::new(None)),
+        worldstate: Arc::new(RwLock::new(None)),
+        overlay_edit: Arc::new(RwLock::new(false)),
+        hotkey: Arc::new(RwLock::new(None)),
     };
 
     tauri::Builder::default()
@@ -169,7 +175,27 @@ pub fn run() {
                 let _ = h3.emit("ready", ());
             });
 
+            // World state for the widgets, once a minute.
+            let h4 = handle.clone();
+            tauri::async_runtime::spawn(async move {
+                loop {
+                    let st = h4.state::<AppState>();
+                    match wfc_core::worldstate::fetch(&st.http).await {
+                        Ok(v) => {
+                            *st.worldstate.write() = Some(v.clone());
+                            let _ = h4.emit("worldstate", &v);
+                        }
+                        Err(e) => tracing::warn!("worldstate: {e}"),
+                    }
+                    tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+                }
+            });
+
             overlay::init(&handle)?;
+            let key = st.db.get("overlay_hotkey").unwrap_or_else(|| "CommandOrControl+Shift+W".into());
+            if let Err(e) = overlay::register_hotkey(&handle, &key) {
+                tracing::warn!("overlay hotkey {key}: {e}");
+            }
             connect_ws(&handle);
             Ok(())
         })
@@ -188,6 +214,10 @@ pub fn run() {
             commands::market_item,
             commands::set_launch_with_game,
             commands::game_running,
+            commands::game_focused,
+            commands::worldstate,
+            commands::overlay_edit,
+            commands::set_overlay_hotkey,
             commands::market_price,
             commands::market_orders,
             commands::wfm_login,

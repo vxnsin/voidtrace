@@ -14,6 +14,7 @@ import Rivens from "./views/Rivens.vue";
 import Trading from "./views/Trading.vue";
 import Market from "./views/Market.vue";
 import Chat from "./views/Chat.vue";
+import Widgets from "./views/Widgets.vue";
 import Settings from "./views/Settings.vue";
 
 const tabs = [
@@ -25,6 +26,7 @@ const tabs = [
   { id: "trading", label: "Trading", c: Trading },
   { id: "market", label: "Warframe.Market", c: Market },
   { id: "chat", label: "WFM Chat", c: Chat },
+  { id: "widgets", label: "Widgets", c: Widgets },
   { id: "settings", label: "Settings", c: Settings },
 ];
 const active = ref("foundry");
@@ -54,6 +56,7 @@ onMounted(async () => {
   setup.value = (await api.getSetting("setup_done")) !== "1";
   api.on("ready", refresh);
   api.on<GameEvent>("game-event", (e) => {
+    if (e.kind === "game_focus") return;
     lastEvent.value = e.kind + (e.name ? ` ${e.name}` : "") + (e.relic ? ` ${e.relic}` : "");
     if (e.kind === "logged_in") refresh();
     if (e.kind === "trade_complete" && !tradePrompt.value) tradePrompt.value = {};

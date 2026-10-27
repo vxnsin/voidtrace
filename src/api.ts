@@ -35,7 +35,12 @@ export type Chat = { id: string; chat_with: ChatUser[]; unread_count: number; la
 export type ChatMessage = { id: string; message: string; message_from: string; send_date: string; raw_message?: string | null };
 export type SyncResult ={ platinum: number; credits: number; ducats: number; items_total: number; items_tradeable: number; seconds: number };
 export type RewardHit ={ raw: string; price: PriceSummary | null; best: boolean };
-export type GameEvent = { kind: string; name?: string; relic?: string; line?: string };
+export type GameEvent = { kind: string; name?: string; relic?: string; line?: string; focused?: boolean };
+/** api.warframestat.us subset (see wfc-core/worldstate.rs); timestamps are ISO strings. */
+export type Cycle = { activation: string; expiry: string; state: string };
+export type Fissure = { id: string; expiry: string; node: string; missionType: string; enemy: string; tier: string; tierNum: number; isStorm: boolean; isHard: boolean };
+export type VoidTrader = { activation: string; expiry: string; location: string; inventory: { item: string; ducats: number; credits: number }[] };
+export type WorldState = { cetusCycle?: Cycle; vallisCycle?: Cycle; cambionCycle?: Cycle; zarimanCycle?: Cycle; duviriCycle?: Cycle; earthCycle?: Cycle; fissures?: Fissure[]; voidTrader?: VoidTrader };
 
 const iconUrl = (icon: string) => `https://warframe.market/static/assets/${icon}`;
 const icons = new Map<string, Promise<string | null>>();
@@ -53,6 +58,10 @@ export const api = {
   setSetting: (key: string, value: string) => invoke<void>("set_setting", { key, value }),
   setLaunchWithGame: (on: boolean) => invoke<void>("set_launch_with_game", { on }),
   gameRunning: () => invoke<boolean>("game_running"),
+  gameFocused: () => invoke<boolean>("game_focused"),
+  worldstate: () => invoke<WorldState | null>("worldstate"),
+  overlayEdit: (on: boolean) => invoke<void>("overlay_edit", { on }),
+  setOverlayHotkey: (key: string) => invoke<void>("set_overlay_hotkey", { key }),
   getSetting: (key: string) => invoke<string | null>("get_setting", { key }),
   loadProfile: (playerId: string) => invoke<MasterySummary>("load_profile", { playerId }),
   overlayPreview: () => invoke<void>("overlay_preview"),

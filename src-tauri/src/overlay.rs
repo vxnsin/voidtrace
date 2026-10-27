@@ -1,5 +1,6 @@
-//! Overlay window: transparent, always on top, click-through. Shown on the
-//! relic reward screen with OCR results, hidden after the pick.
+//! Overlay window: one transparent, always-on-top, click-through layer over the
+//! whole primary screen that hosts the pinned widgets. Visible while the game
+//! runs; the edit hotkey makes it take the mouse so widgets can be moved.
 //!
 //! Warframe must run in Borderless Fullscreen (exclusive fullscreen hides every
 //! overlay that is not injected, Overwolf included).
@@ -11,8 +12,46 @@ use wfc_core::ocr::Crop;
 
 pub fn init(app: &AppHandle) -> tauri::Result<()> {
     if let Some(w) = app.get_webview_window("overlay") {
+        if let Ok(Some(m)) = w.primary_monitor() {
+            w.set_position(*m.position())?;
+            w.set_size(*m.size())?;
+        }
         w.set_ignore_cursor_events(true)?;
     }
+    if wfc_core::memory::find_pid().is_some() {
+        show(app);
+    }
+    Ok(())
+}
+
+/// Edit mode: the layer takes the mouse and the widgets can be dragged.
+pub fn set_edit(app: &AppHandle, on: bool) {
+    *app.state::<AppState>().overlay_edit.write() = on;
+    if let Some(w) = app.get_webview_window("overlay") {
+        let _ = w.set_ignore_cursor_events(!on);
+        if on {
+            show(app);
+            let _ = w.set_focus();
+        }
+    }
+    let _ = app.emit("overlay-edit", on);
+}
+
+/// (Re)bind the edit-mode hotkey, e.g. "CommandOrControl+Shift+W".
+pub fn register_hotkey(app: &AppHandle, key: &str) -> anyhow::Result<()> {
+    use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
+    let st = app.state::<AppState>();
+    let gs = app.global_shortcut();
+    if let Some(old) = st.hotkey.write().take() {
+        let _ = gs.unregister(old.as_str());
+    }
+    gs.on_shortcut(key, |app, _, ev| {
+        if matches!(ev.state, ShortcutState::Pressed) {
+            let on = !*app.state::<AppState>().overlay_edit.read();
+            set_edit(app, on);
+        }
+    })?;
+    *st.hotkey.write() = Some(key.to_string());
     Ok(())
 }
 
@@ -171,7 +210,12 @@ pub async fn on_event(app: &AppHandle, ev: GameEvent) {
         GameEvent::MissionStart { name } => auto_activity(app, "ON_MISSION", Some(name.clone())),
         GameEvent::MissionEnd => auto_activity(app, "IN_ORBITER", None),
         GameEvent::GameClosed => exit_status(app),
-        GameEvent::GameStarted if st.db.get("launch_with_game").as_deref() == Some("1") => crate::show_main(app),
+        GameEvent::GameStarted => {
+            if st.db.get("launch_with_game").as_deref() == Some("1") {
+                crate::show_main(app);
+            }
+            show(app);
+        }
         _ => {}
     }
     match ev {
@@ -187,11 +231,12 @@ pub async fn on_event(app: &AppHandle, ev: GameEvent) {
             }
             // The inventory arrives right after login.
             auto_sync(app, 4);
+            show(app);
         }
         GameEvent::MissionStart { .. } => auto_sync(app, 6),
         GameEvent::MissionEnd => {
             auto_sync(app, 4);
-            hide(app);
+            let _ = app.emit("rewards-done", ());
         }
         GameEvent::RelicOpened { relic } => {
             let strip = |u: &str| {
@@ -214,7 +259,10 @@ pub async fn on_event(app: &AppHandle, ev: GameEvent) {
                 run_ocr(app).await;
             }
         }
-        GameEvent::RewardDone | GameEvent::GameClosed => hide(app),
+        GameEvent::RewardDone => {
+            let _ = app.emit("rewards-done", ());
+        }
+        GameEvent::GameClosed => hide(app),
         _ => {}
     }
 }

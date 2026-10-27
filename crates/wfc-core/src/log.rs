@@ -24,6 +24,8 @@ pub enum GameEvent {
     RelicOpened { relic: String },
     /// The Warframe process appeared (process watcher).
     GameStarted,
+    /// The game window gained or lost the foreground (process watcher).
+    GameFocus { focused: bool },
     /// The Warframe process went away. Comes from the process watcher, not
     /// the log: a crash or a killed process writes no shutdown line.
     GameClosed,
@@ -118,20 +120,29 @@ impl Compiled {
     }
 }
 
-/// Polls the process list and sends `GameStarted` / `GameClosed` on the edges.
-/// The state at app start is the baseline: an already running game sends nothing.
+/// Polls the process list (every 5 s) and the foreground window (every second)
+/// and sends `GameStarted` / `GameClosed` / `GameFocus` on the edges. The process
+/// state at app start is the baseline: an already running game sends no start.
 pub fn spawn_process_watcher(tx: broadcast::Sender<GameEvent>) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
-        let mut running = crate::memory::find_pid().is_some();
-        loop {
-            std::thread::sleep(Duration::from_secs(5));
-            let now = crate::memory::find_pid().is_some();
-            if running && !now {
-                let _ = tx.send(GameEvent::GameClosed);
-            } else if !running && now {
-                let _ = tx.send(GameEvent::GameStarted);
+        let mut pid = crate::memory::find_pid();
+        let mut focused = false;
+        for tick in 1u64.. {
+            std::thread::sleep(Duration::from_secs(1));
+            if tick % 5 == 0 {
+                let now = crate::memory::find_pid();
+                if pid.is_some() && now.is_none() {
+                    let _ = tx.send(GameEvent::GameClosed);
+                } else if pid.is_none() && now.is_some() {
+                    let _ = tx.send(GameEvent::GameStarted);
+                }
+                pid = now;
             }
-            running = now;
+            let f = pid.is_some() && crate::memory::foreground_pid() == pid;
+            if f != focused {
+                focused = f;
+                let _ = tx.send(GameEvent::GameFocus { focused });
+            }
         }
     })
 }

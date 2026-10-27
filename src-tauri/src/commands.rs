@@ -192,6 +192,32 @@ pub fn game_running() -> bool {
     wfc_core::memory::find_pid().is_some()
 }
 
+/// Is the game window in front right now (the overlay hides otherwise).
+#[tauri::command]
+pub fn game_focused() -> bool {
+    let pid = wfc_core::memory::find_pid();
+    pid.is_some() && wfc_core::memory::foreground_pid() == pid
+}
+
+/// Latest world state (cycles, fissures, Baro …), refreshed once a minute.
+#[tauri::command]
+pub fn worldstate(st: State<AppState>) -> Option<serde_json::Value> {
+    st.worldstate.read().clone()
+}
+
+/// Turn the overlay's edit mode on or off (also bound to the hotkey).
+#[tauri::command]
+pub fn overlay_edit(app: AppHandle, on: bool) {
+    crate::overlay::set_edit(&app, on);
+}
+
+/// Rebind the overlay edit hotkey and remember it.
+#[tauri::command]
+pub fn set_overlay_hotkey(app: AppHandle, st: State<AppState>, key: String) -> R<()> {
+    crate::overlay::register_hotkey(&app, &key).map_err(err)?;
+    st.db.set("overlay_hotkey", &key).map_err(err)
+}
+
 /// Start with Windows (hidden, `--background`) and open when Warframe starts.
 #[tauri::command]
 pub fn set_launch_with_game(app: AppHandle, st: State<AppState>, on: bool) -> R<()> {
