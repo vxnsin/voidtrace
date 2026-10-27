@@ -182,3 +182,142 @@ impl Db {
         Ok(())
     }
 }
+
+/// Everything VoidTrace records, as one JSON document (export / import).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Backup {
+    pub voidtrace_export: u32,
+    pub version: String,
+    pub exported: i64,
+    pub trades: Vec<Trade>,
+    /// Plat / ducats / credits from the inventory syncs.
+    pub history: Vec<Datapoint>,
+    pub relic_runs: Vec<RelicRun>,
+    pub inventory: Vec<InvRow>,
+}
+
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct Imported {
+    pub trades: usize,
+    pub history: usize,
+    pub relic_runs: usize,
+    pub inventory: usize,
+}
+
+impl Db {
+    pub fn backup(&self, version: &str) -> Result<Backup> {
+        Ok(Backup {
+            voidtrace_export: 1,
+            version: version.to_string(),
+            exported: chrono::Utc::now().timestamp(),
+            trades: self.trades()?,
+            history: self.datapoints(usize::MAX >> 1)?,
+            relic_runs: self.relic_runs(usize::MAX >> 1)?,
+            inventory: self.inventory()?,
+        })
+    }
+
+    /// Merge a backup into this database: rows that are already here (same
+    /// time and content) are skipped, so importing twice changes nothing. The
+    /// inventory is only taken over when there is none yet.
+    pub fn restore(&self, b: &Backup) -> Result<Imported> {
+        let mut c = self.0.lock();
+        let tx = c.transaction()?;
+        let mut n = Imported::default();
+        for t in &b.trades {
+            let dup: i64 = tx.query_row(
+                "SELECT COUNT(*) FROM trades WHERE ts=?1 AND item=?2 AND platinum=?3 AND direction=?4",
+                params![t.ts, t.item, t.platinum, t.direction],
+                |r| r.get(0),
+            )?;
+            if dup == 0 {
+                tx.execute(
+                    "INSERT INTO trades(ts,item,quantity,platinum,direction,partner) VALUES(?1,?2,?3,?4,?5,?6)",
+                    params![t.ts, t.item, t.quantity, t.platinum, t.direction, t.partner],
+                )?;
+                n.trades += 1;
+            }
+        }
+        for d in &b.history {
+            n.history += tx.execute("INSERT OR IGNORE INTO datapoints VALUES(?1,?2,?3,?4)", params![d.ts, d.platinum, d.ducats, d.credits])?;
+        }
+        for r in &b.relic_runs {
+            let dup: i64 = tx.query_row("SELECT COUNT(*) FROM relic_runs WHERE ts=?1 AND relic=?2", params![r.ts, r.relic], |x| x.get(0))?;
+            if dup == 0 {
+                tx.execute(
+                    "INSERT INTO relic_runs(ts,relic,rewards,chosen) VALUES(?1,?2,?3,?4)",
+                    params![r.ts, r.relic, serde_json::to_string(&r.rewards)?, r.chosen],
+                )?;
+                n.relic_runs += 1;
+            }
+        }
+        let have: i64 = tx.query_row("SELECT COUNT(*) FROM inventory WHERE quantity<>0", [], |r| r.get(0))?;
+        if have == 0 {
+            for i in &b.inventory {
+                tx.execute("INSERT OR REPLACE INTO inventory(slug,name,quantity) VALUES(?1,?2,?3)", params![i.slug, i.name, i.quantity])?;
+                n.inventory += 1;
+            }
+        }
+        tx.commit()?;
+        Ok(n)
+    }
+}
+
+fn csv_field(s: &str) -> String {
+    if s.contains([',', '"', '\n', '\r']) {
+        format!("\"{}\"", s.replace('"', "\"\""))
+    } else {
+        s.to_string()
+    }
+}
+fn csv(header: &[&str], rows: impl Iterator<Item = Vec<String>>) -> String {
+    let mut out = header.join(",") + "\r\n";
+    for r in rows {
+        out += &r.iter().map(|f| csv_field(f)).collect::<Vec<_>>().join(",");
+        out += "\r\n";
+    }
+    out
+}
+fn iso(ts: i64) -> String {
+    chrono::DateTime::from_timestamp(ts, 0).map(|t| t.to_rfc3339()).unwrap_or_default()
+}
+
+impl Backup {
+    /// One CSV per table next to `base` (`<name>-trades.csv`, …); returns the files.
+    pub fn write_csv(&self, base: &std::path::Path) -> Result<Vec<std::path::PathBuf>> {
+        let stem = base.file_stem().and_then(|s| s.to_str()).unwrap_or("voidtrace").to_string();
+        let dir = base.parent().map(|p| p.to_path_buf()).unwrap_or_default();
+        let files = [
+            ("trades", csv(&["time", "direction", "item", "quantity", "platinum", "partner"], self.trades.iter().map(|t| {
+                vec![iso(t.ts), t.direction.clone(), t.item.clone(), t.quantity.to_string(), t.platinum.to_string(), t.partner.clone()]
+            }))),
+            ("history", csv(&["time", "platinum", "ducats", "credits"], self.history.iter().map(|d| {
+                vec![iso(d.ts), d.platinum.to_string(), d.ducats.to_string(), d.credits.to_string()]
+            }))),
+            ("relic-runs", csv(&["time", "relic", "rewards", "chosen"], self.relic_runs.iter().map(|r| {
+                vec![iso(r.ts), r.relic.clone(), r.rewards.join(" | "), r.chosen.clone().unwrap_or_default()]
+            }))),
+            ("inventory", csv(&["slug", "name", "quantity"], self.inventory.iter().map(|i| vec![i.slug.clone(), i.name.clone(), i.quantity.to_string()]))),
+        ];
+        let mut out = vec![];
+        for (name, body) in files {
+            let p = dir.join(format!("{stem}-{name}.csv"));
+            // BOM so Excel opens it as UTF-8.
+            std::fs::write(&p, format!("\u{feff}{body}"))?;
+            out.push(p);
+        }
+        Ok(out)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn csv_quotes_what_needs_quoting() {
+        assert_eq!(csv_field("Ash Prime Set"), "Ash Prime Set");
+        assert_eq!(csv_field("a,b"), "\"a,b\"");
+        assert_eq!(csv_field("say \"hi\""), "\"say \"\"hi\"\"\"");
+    }
+}

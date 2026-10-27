@@ -136,6 +136,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
@@ -292,6 +293,9 @@ pub fn run() {
             commands::market_watch_refresh,
             commands::price_alerts,
             commands::set_price_alerts,
+            commands::export_data,
+            commands::import_data,
+            commands::market_stats,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -88,6 +88,23 @@ pub struct ClosedOrder {
     pub name: String,
 }
 
+/// One bucket of an item's trade statistics.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StatPoint {
+    pub datetime: String,
+    pub volume: u32,
+    pub min: f64,
+    pub max: f64,
+    pub avg: f64,
+    pub median: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ItemStats {
+    pub hours48: Vec<StatPoint>,
+    pub days90: Vec<StatPoint>,
+}
+
 /// What v2 returns when an order is closed: the sale/purchase it recorded
 /// (docs.warframe.market, data model "Transaction"; no itemId, only the order).
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -505,6 +522,43 @@ impl Market {
                 })
             })
             .collect())
+    }
+
+    /// Price and volume history of an item from closed trades (v1 statistics,
+    /// public): hourly for the last 48 hours, daily for the last 90 days.
+    pub async fn item_statistics(&self, slug: &str) -> Result<ItemStats> {
+        let res = self
+            .http
+            .get(format!("https://api.warframe.market/v1/items/{slug}/statistics"))
+            .header("Platform", "pc")
+            .header("Language", "en")
+            .header("User-Agent", USER_AGENT)
+            .send()
+            .await?;
+        let status = res.status();
+        let v: Value = res.json().await.with_context(|| format!("item statistics {status}"))?;
+        let series = |key: &str| -> Vec<StatPoint> {
+            v.pointer(&format!("/payload/statistics_closed/{key}"))
+                .and_then(Value::as_array)
+                .map(|a| {
+                    a.iter()
+                        // Ranked mods report every rank; keep unranked / rank 0.
+                        .filter(|p| p["mod_rank"].as_u64().unwrap_or(0) == 0)
+                        .filter_map(|p| {
+                            Some(StatPoint {
+                                datetime: p["datetime"].as_str()?.to_string(),
+                                volume: p["volume"].as_u64().unwrap_or(0) as u32,
+                                min: p["min_price"].as_f64().unwrap_or(0.0),
+                                max: p["max_price"].as_f64().unwrap_or(0.0),
+                                avg: p["avg_price"].as_f64().unwrap_or(0.0),
+                                median: p["median"].as_f64().unwrap_or(0.0),
+                            })
+                        })
+                        .collect()
+                })
+                .unwrap_or_default()
+        };
+        Ok(ItemStats { hours48: series("48hours"), days90: series("90days") })
     }
 
     pub async fn my_orders(&self) -> Result<Vec<Order>> {

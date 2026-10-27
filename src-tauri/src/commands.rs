@@ -593,3 +593,34 @@ pub async fn set_price_alerts(app: AppHandle, st: State<'_, AppState>, alerts: V
     }
     Ok(())
 }
+
+/// Write everything to `path`: one JSON file, or CSV files named after it.
+/// Returns the files written.
+#[tauri::command]
+pub fn export_data(app: AppHandle, st: State<AppState>, path: String, format: String) -> R<Vec<String>> {
+    let b = st.db.backup(&app.package_info().version.to_string()).map_err(err)?;
+    let p = std::path::PathBuf::from(&path);
+    let files = if format == "csv" {
+        b.write_csv(&p).map_err(err)?
+    } else {
+        std::fs::write(&p, serde_json::to_vec_pretty(&b).map_err(err)?).map_err(err)?;
+        vec![p]
+    };
+    tracing::info!("exported {} trades to {path}", b.trades.len());
+    Ok(files.iter().map(|f| f.display().to_string()).collect())
+}
+
+/// Merge a JSON export (from this or another PC) into the local data.
+#[tauri::command]
+pub fn import_data(st: State<AppState>, path: String) -> R<wfc_core::db::Imported> {
+    let text = std::fs::read_to_string(&path).map_err(err)?;
+    let b: wfc_core::db::Backup = serde_json::from_str(&text).map_err(|e| format!("not a VoidTrace export: {e}"))?;
+    let n = st.db.restore(&b).map_err(err)?;
+    tracing::info!("imported from {path}: {n:?}");
+    Ok(n)
+}
+
+#[tauri::command]
+pub async fn market_stats(st: State<'_, AppState>, slug: String) -> R<wfc_core::market::ItemStats> {
+    st.market.item_statistics(&slug).await.map_err(err)
+}

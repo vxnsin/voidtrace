@@ -40,7 +40,8 @@ export type GameEvent = { kind: string; name?: string; relic?: string; line?: st
 export type Cycle = { activation: string; expiry: string; state: string };
 export type Fissure = { id: string; expiry: string; node: string; missionType: string; enemy: string; tier: string; tierNum: number; isStorm: boolean; isHard: boolean };
 export type VoidTrader = { activation: string; expiry: string; location: string; inventory: { item: string; ducats: number; credits: number }[] };
-export type WorldState = { cetusCycle?: Cycle; vallisCycle?: Cycle; cambionCycle?: Cycle; zarimanCycle?: Cycle; duviriCycle?: Cycle; earthCycle?: Cycle; fissures?: Fissure[]; voidTrader?: VoidTrader };
+export type VaultTrader = { activation: string; expiry: string; inventory: { item: string; ducats?: number | null; credits?: number | null }[] };
+export type WorldState = { vaultTrader?: VaultTrader; cetusCycle?: Cycle; vallisCycle?: Cycle; cambionCycle?: Cycle; zarimanCycle?: Cycle; duviriCycle?: Cycle; earthCycle?: Cycle; fissures?: Fissure[]; voidTrader?: VoidTrader };
 
 const iconUrl = (icon: string) => `https://warframe.market/static/assets/${icon}`;
 const icons = new Map<string, Promise<string | null>>();
@@ -157,4 +158,13 @@ export const notifyApi = {
   watchRefresh: () => invoke<WatchSnapshot>("market_watch_refresh"),
   alerts: () => invoke<PriceAlert[]>("price_alerts"),
   setAlerts: (alerts: PriceAlert[]) => invoke<void>("set_price_alerts", { alerts }),
+};
+
+export type Imported = { trades: number; history: number; relic_runs: number; inventory: number };
+export type StatPoint = { datetime: string; volume: number; min: number; max: number; avg: number; median: number };
+export type ItemStats = { hours48: StatPoint[]; days90: StatPoint[] };
+export const dataApi = {
+  exportData: (path: string, format: "json" | "csv") => invoke<string[]>("export_data", { path, format }),
+  importData: (path: string) => invoke<Imported>("import_data", { path }),
+  marketStats: (slug: string) => invoke<ItemStats>("market_stats", { slug }),
 };
