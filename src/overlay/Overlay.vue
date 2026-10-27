@@ -45,6 +45,8 @@ const selected = computed(() => (sel.value ? byId(sel.value) : null));
 
 async function update(id: WidgetId, patch: Partial<WidgetCfg>) {
   cfgs.value = cfgs.value.map((w) => (w.id === id ? { ...w, ...patch } : w));
+  // The reward OCR only runs while its widget is on screen.
+  if (id === "rewards" && "pinned" in patch) await api.setSetting("overlay_enabled", patch.pinned ? "1" : "0");
   await saveWidgets(cfgs.value);
 }
 async function updateAll(patch: Partial<WidgetCfg>) {

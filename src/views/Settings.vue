@@ -6,7 +6,6 @@ import { checkForUpdate, installUpdate, updates } from "../updates";
 
 defineProps<{ status: Status | null }>();
 const emit = defineEmits(["refresh"]);
-const overlay = ref(true);
 const memorySync = ref(false);
 const introMode = ref<"full" | "quick" | "off">("full");
 function setIntro(m: "full" | "quick" | "off") {
@@ -35,7 +34,6 @@ const busy = ref(false);
 
 async function load() {
   try { introMode.value = (localStorage.getItem("intro_mode") as typeof introMode.value) || "full"; } catch {}
-  overlay.value = (await api.getSetting("overlay_enabled")) !== "0";
   memorySync.value = (await api.getSetting("memory_sync")) === "1";
   launchWithGame.value = (await api.getSetting("launch_with_game")) === "1";
   rawLog.value = (await api.getSetting("log_raw")) === "1";
@@ -43,7 +41,6 @@ async function load() {
   patterns.value = (await api.getSetting("log_patterns")) ?? "";
 }
 async function save() {
-  await api.setSetting("overlay_enabled", overlay.value ? "1" : "0");
   await api.setSetting("memory_sync", memorySync.value ? "1" : "0");
   await api.setSetting("log_raw", rawLog.value ? "1" : "0");
   await api.setSetting("ocr_crop", JSON.stringify(crop.value));
@@ -89,7 +86,7 @@ onMounted(load);
   </div>
   <div class="card">
     <h2 style="margin-top:0">Overlay</h2>
-    <label class="row"><input type="checkbox" v-model="overlay" /> Show relic reward overlay automatically</label>
+    <p class="muted" style="margin-top:0">The relic reward widget is added or removed in the in-game editor; reading the reward screen runs only while it is on screen.</p>
     <p class="muted">Warframe must run in <b>Borderless Fullscreen</b> for any overlay to be visible. Game language must be English for OCR matching.</p>
     <div class="row">
       <span class="muted">Reward row crop (fractions of screen):</span>

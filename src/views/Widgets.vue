@@ -22,7 +22,6 @@ const pretty = (k: string) => k.replace("CommandOrControl", "Ctrl");
 
 async function update(id: string, patch: Partial<WidgetCfg>) {
   cfgs.value = cfgs.value.map((w) => (w.id === id ? { ...w, ...patch } : w));
-  if (id === "rewards" && "pinned" in patch) await api.setSetting("overlay_enabled", patch.pinned ? "1" : "0");
   await saveWidgets(cfgs.value);
 }
 
@@ -83,7 +82,7 @@ onUnmounted(() => window.removeEventListener("keydown", capture));
         <div class="preview" style="--wo: 1"><component :is="m.c" :cfg="byId(m.id)" /></div>
         <div class="side">
           <div class="name"><b>{{ m.name }}</b><span class="muted">{{ m.desc }}</span></div>
-          <label class="row"><input type="checkbox" :checked="byId(m.id).pinned" @change="update(m.id, { pinned: !byId(m.id).pinned })" /> Show in game</label>
+          <span class="state" :class="{ on: byId(m.id).pinned }">{{ byId(m.id).pinned ? "placed in game" : "not placed — add it in the editor" }}</span>
           <WidgetSettings :cfg="byId(m.id)" compact @update="(p) => update(m.id, p)" />
         </div>
       </div>
@@ -98,6 +97,8 @@ onUnmounted(() => window.removeEventListener("keydown", capture));
 .hk { display: grid; gap: 8px; }
 .hkrow { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; }
 .hkrow b { color: var(--accent2); font-weight: 500; }
+.state { font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.state.on { color: var(--warn); }
 .item { display: grid; grid-template-columns: auto minmax(280px, 1fr); gap: 24px; align-items: start; margin-bottom: 10px; }
 .preview { min-width: 240px; }
 .side { display: grid; gap: 10px; align-content: start; }
