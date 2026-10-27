@@ -158,7 +158,7 @@ onMounted(load);
     <h2 style="margin-top:0">Game log</h2>
     <p class="muted">Reading <code>{{ status?.ee_log }}</code> — {{ status?.ee_log_exists ? "found" : "not found (start Warframe once)" }}</p>
     <label class="row"><input type="checkbox" v-model="rawLog" /> Forward every log line as an event (debugging)</label>
-    <p class="muted">Regex overrides (JSON with keys logged_in, mission_start, mission_end, reward_screen, reward_done, trade_complete, relic_opened). Leave empty for defaults.</p>
+    <p class="muted">Regex overrides (JSON with keys logged_in, mission_start, mission_end, reward_screen, reward_done, trade_complete, relic_opened, relic_select). Leave empty for defaults.</p>
     <textarea v-model="patterns" rows="4" style="width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:inherit;padding:8px;font-family:monospace"></textarea>
   </div>
 

@@ -7,8 +7,9 @@ import RewardsWidget from "./RewardsWidget.vue";
 import SessionWidget from "./SessionWidget.vue";
 import BaroWidget from "./BaroWidget.vue";
 import NoticesWidget from "./NoticesWidget.vue";
+import RelicPicksWidget from "./RelicPicksWidget.vue";
 
-export type WidgetId = "cycles" | "fissures" | "rewards" | "session" | "baro" | "notices";
+export type WidgetId = "cycles" | "fissures" | "rewards" | "session" | "baro" | "notices" | "relics";
 export type FissureFilter = { tiers: string[]; missions: string[]; steelPath: "all" | "only" | "hide"; storms: boolean };
 
 /** One widget's settings, stored as JSON under the `widgets` setting.
@@ -27,6 +28,8 @@ export type WidgetCfg = {
   size: "compact" | "full";
   show: "always" | "mission" | "orbiter";
   filter?: FissureFilter;
+  /** Relic picks widget: what to rank by. */
+  relicSort?: "plat" | "ducats";
 };
 
 export const CATEGORIES = ["World", "Relics", "You"] as const;
@@ -36,6 +39,7 @@ export const WIDGETS: { id: WidgetId; cat: (typeof CATEGORIES)[number]; name: st
   { id: "fissures", cat: "World", name: "Fissures", desc: "Active void fissures, filtered your way", c: FissuresWidget },
   { id: "baro", cat: "World", name: "Baro Ki'Teer", desc: "Countdown, relay and his offer with plat values", c: BaroWidget },
   { id: "rewards", cat: "Relics", name: "Relic rewards", desc: "Plat and ducats per card; shows itself on the reward screen", c: RewardsWidget },
+  { id: "relics", cat: "Relics", name: "Relic picks", desc: "Your best relics on the relic selection screen", c: RelicPicksWidget },
   { id: "session", cat: "You", name: "Session", desc: "Plat, ducats, relics and trades since the game started", c: SessionWidget },
   { id: "notices", cat: "You", name: "Notifications", desc: "Cycles, fissures, undercuts, Baro, trades: a line when it happens", c: NoticesWidget },
 ];
@@ -48,6 +52,7 @@ const DEFAULTS: WidgetCfg[] = [
   { id: "session", pinned: false, dashboard: true, anchor: 6, x: 1.5, y: 6, scale: 1, opacity: 0.88, size: "full", show: "always" },
   { id: "baro", pinned: false, dashboard: true, anchor: 7, x: 0, y: 6, scale: 1, opacity: 0.88, size: "compact", show: "orbiter" },
   { id: "notices", pinned: true, dashboard: false, anchor: 1, x: 0, y: 1.5, scale: 1, opacity: 0.92, size: "full", show: "always" },
+  { id: "relics", pinned: false, dashboard: false, anchor: 5, x: 1.5, y: 0, scale: 1, opacity: 0.92, size: "full", show: "always", relicSort: "plat" },
 ];
 
 export async function loadWidgets(): Promise<WidgetCfg[]> {

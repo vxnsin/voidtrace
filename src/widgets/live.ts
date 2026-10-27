@@ -12,11 +12,14 @@ export const live = reactive({
   notices: [] as (Notice & { key: number })[],
   /** The overlay editor is open (widgets show examples). */
   editing: false,
+  /** Relic selection screen is up (log trigger `relic_select`), for a minute. */
+  relicSelect: false,
   game: { running: false, focused: false, where: "orbiter" as "orbiter" | "mission" },
   session: { start: Date.now() / 1000, plat: null as number | null, ducats: null as number | null, relics: 0, trades: 0 },
 });
 
 let started = false;
+let relicTimer: ReturnType<typeof setTimeout> | undefined;
 
 async function refreshSession() {
   const since = live.session.start;
@@ -46,11 +49,17 @@ function onGame(e: GameEvent) {
       live.game.running = false;
       live.game.focused = false;
       break;
+    case "relic_select":
+      live.relicSelect = true;
+      clearTimeout(relicTimer);
+      relicTimer = setTimeout(() => (live.relicSelect = false), 60000);
+      break;
     case "game_focus":
       live.game.focused = !!e.focused;
       break;
     case "mission_start":
       live.game.where = "mission";
+      live.relicSelect = false;
       break;
     case "mission_end":
     case "logged_in":

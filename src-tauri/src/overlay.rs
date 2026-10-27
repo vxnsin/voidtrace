@@ -134,6 +134,16 @@ pub async fn sync_inventory(app: &AppHandle) -> anyhow::Result<crate::commands::
         }
     }
     st.db.inventory_replace(&rows)?;
+    // Relics per refinement (the market only knows intact ones), for the planner.
+    let mut relics: std::collections::BTreeMap<String, [i64; 4]> = Default::default();
+    for it in snap.items.iter().filter(|i| i.path.contains("/Projections/")) {
+        if let Some(r) = wfc_core::relic::refinement_of(&it.path) {
+            relics.entry(it.name.trim_end_matches(" Relic").to_string()).or_default()[r] += it.count;
+        }
+    }
+    if let Ok(s) = serde_json::to_string(&relics) {
+        let _ = st.db.set("owned_relics", &s);
+    }
     st.db.add_datapoint(&wfc_core::db::Datapoint {
         ts: chrono::Utc::now().timestamp(),
         platinum: snap.platinum as i32,

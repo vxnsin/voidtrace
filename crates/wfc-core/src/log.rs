@@ -22,6 +22,9 @@ pub enum GameEvent {
     RewardDone,
     TradeComplete,
     RelicOpened { relic: String },
+    /// The relic selection screen before a fissure (pattern `relic_select`;
+    /// empty until the line is known from a real EE.log).
+    RelicSelect,
     /// The Warframe process appeared (process watcher).
     GameStarted,
     /// The game window gained or lost the foreground (process watcher).
@@ -41,6 +44,9 @@ pub struct Patterns {
     pub reward_done: String,
     pub trade_complete: String,
     pub relic_opened: String,
+    /// Empty = off.
+    #[serde(default)]
+    pub relic_select: String,
 }
 
 impl Default for Patterns {
@@ -58,6 +64,7 @@ impl Default for Patterns {
             trade_complete: r"Trade complete|TradingDialog.*?completed".into(),
             // Last relic loaded before the fissure; refinement suffix stripped.
             relic_opened: r"Projections/(T\dVoidProjection\w+?)(?:Bronze|Silver|Gold|Platinum)\)".into(),
+            relic_select: String::new(),
         }
     }
 }
@@ -70,6 +77,7 @@ struct Compiled {
     reward_done: Regex,
     trade_complete: Regex,
     relic_opened: Regex,
+    relic_select: Option<Regex>,
 }
 
 impl Compiled {
@@ -82,6 +90,7 @@ impl Compiled {
             reward_done: Regex::new(&p.reward_done)?,
             trade_complete: Regex::new(&p.trade_complete)?,
             relic_opened: Regex::new(&p.relic_opened)?,
+            relic_select: if p.relic_select.trim().is_empty() { None } else { Some(Regex::new(&p.relic_select)?) },
         })
     }
 
@@ -103,6 +112,9 @@ impl Compiled {
         }
         if self.reward_done.is_match(line) {
             return Some(GameEvent::RewardDone);
+        }
+        if self.relic_select.as_ref().is_some_and(|r| r.is_match(line)) {
+            return Some(GameEvent::RelicSelect);
         }
         if let Some(c) = self.relic_opened.captures(line) {
             return Some(GameEvent::RelicOpened { relic: c[1].to_string() });

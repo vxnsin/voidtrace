@@ -30,6 +30,10 @@ function toggle(key: "tiers" | "missions", v: string) {
       <label class="rng"><span class="lbl">Opacity</span><input type="range" min="0.4" max="1" step="0.02" :value="cfg.opacity" @input="emit('update', { opacity: Number(val($event)) })" /><span>{{ Math.round(cfg.opacity * 100) }}%</span></label>
       <label class="rng"><span class="lbl">Scale</span><input type="range" min="0.7" max="1.6" step="0.05" :value="cfg.scale" @input="emit('update', { scale: Number(val($event)) })" /><span>{{ Math.round(cfg.scale * 100) }}%</span></label>
     </template>
+    <div v-if="cfg.id === 'relics'" class="seg">
+      <span class="lbl">Rank by</span>
+      <button v-for="s in (['plat', 'ducats'] as const)" :key="s" :class="{ on: (cfg.relicSort ?? 'plat') === s }" @click="emit('update', { relicSort: s })">{{ s }}</button>
+    </div>
     <template v-if="cfg.id === 'fissures'">
       <div class="chips"><span class="lbl">Tiers</span><span v-for="t in TIERS" :key="t" class="chip" :class="{ on: f.tiers.includes(t) }" @click="toggle('tiers', t)">{{ t }}</span></div>
       <div class="chips"><span class="lbl">Missions</span><span v-for="t in missions" :key="t" class="chip" :class="{ on: f.missions.includes(t) }" @click="toggle('missions', t)">{{ t }}</span></div>

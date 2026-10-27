@@ -624,3 +624,78 @@ pub fn import_data(st: State<AppState>, path: String) -> R<wfc_core::db::Importe
 pub async fn market_stats(st: State<'_, AppState>, slug: String) -> R<wfc_core::market::ItemStats> {
     st.market.item_statistics(&slug).await.map_err(err)
 }
+
+/// Relics from the last inventory sync: name -> count per refinement.
+fn owned_relics(st: &AppState) -> std::collections::HashMap<String, [i64; 4]> {
+    st.db.get("owned_relics").and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default()
+}
+
+#[derive(Serialize)]
+pub struct RelicRow {
+    pub name: String,
+    pub owned: [i64; 4],
+    pub vaulted: bool,
+    pub plan: RelicPlan,
+    /// Drops without a known price yet.
+    pub missing: usize,
+}
+
+#[derive(Serialize)]
+pub struct RelicOverview {
+    pub rows: Vec<RelicRow>,
+    pub synced: bool,
+    /// Prices still being fetched in the background.
+    pub pending: usize,
+}
+
+static WARMING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Every relic (or only owned ones) with expected values from prices known so
+/// far. Missing prices are fetched in the background at the market's pace;
+/// "relic-prices" events tell the UI to ask again.
+#[tauri::command]
+pub fn relic_overview(app: AppHandle, st: State<AppState>, only_owned: bool) -> R<RelicOverview> {
+    let ex = export(&st)?;
+    let owned = owned_relics(&st);
+    let index: std::collections::HashMap<String, MarketItem> =
+        st.market.items().into_iter().map(|i| (wfc_core::norm(&i.name), i)).collect();
+    let lookup = |n: &str| index.get(&wfc_core::norm(n)).cloned();
+    let mut rows = vec![];
+    let mut missing: Vec<String> = vec![];
+    let mut seen = std::collections::HashSet::new();
+    for r in &ex.relics {
+        // The export lists each relic once per refinement; one row per name.
+        if !seen.insert(r.name.clone()) {
+            continue;
+        }
+        let have = owned.get(&r.name).copied().unwrap_or_default();
+        if only_owned && have.iter().sum::<i64>() == 0 {
+            continue;
+        }
+        let (plan, miss) = wfc_core::relic::plan_cached(&ex, &st.market, &lookup, r);
+        let vaulted = lookup(&format!("{} Relic", r.name)).map(|i| i.vaulted).unwrap_or(false);
+        rows.push(RelicRow { name: r.name.clone(), owned: have, vaulted, missing: miss.len(), plan });
+        missing.extend(miss);
+    }
+    missing.sort();
+    missing.dedup();
+    let pending = missing.len();
+    if pending > 0 && !WARMING.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        let app = app.clone();
+        tauri::async_runtime::spawn(async move {
+            let st = app.state::<AppState>();
+            for (i, slug) in missing.iter().enumerate() {
+                if let Err(e) = st.market.price(slug).await {
+                    tracing::debug!("price {slug}: {e}");
+                }
+                if i % 10 == 9 || i + 1 == missing.len() {
+                    use tauri::Emitter;
+                    let _ = app.emit("relic-prices", (i + 1, missing.len()));
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+            }
+            WARMING.store(false, std::sync::atomic::Ordering::SeqCst);
+        });
+    }
+    Ok(RelicOverview { rows, synced: st.db.get("owned_relics").is_some(), pending })
+}

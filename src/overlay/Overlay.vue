@@ -36,6 +36,7 @@ const shown = computed(() =>
     if (edit.value) return true;
     if (hudHidden.value) return false;
     if (w.id === "rewards") return live.showRewards;
+    if (w.id === "relics") return live.relicSelect;
     return live.game.focused && (w.show === "always" || w.show === live.game.where);
   }),
 );

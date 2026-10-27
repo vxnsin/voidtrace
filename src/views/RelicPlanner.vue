@@ -2,6 +2,7 @@
 import { onMounted, ref } from "vue";
 import { api, fmtTs, type RelicHit, type RelicPlan, type RelicRun } from "../api";
 import ItemIcon from "../components/ItemIcon.vue";
+import MyRelics from "../components/MyRelics.vue";
 
 const REF = ["Intact", "Exceptional", "Flawless", "Radiant"];
 const want = ref("");
@@ -75,6 +76,9 @@ onMounted(async () => {
       </template>
     </div>
   </div>
+
+  <h2>My relics</h2>
+  <MyRelics @pick="(r) => loadPlan(r)" />
 
   <h2>Recent relic runs</h2>
   <table v-if="runs.length">

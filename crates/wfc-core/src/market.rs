@@ -353,6 +353,11 @@ impl Market {
         .await
     }
 
+    /// Last known price, however old, with its age in seconds (no request).
+    pub fn cached_price(&self, slug: &str) -> Option<(u64, PriceSummary)> {
+        self.price_cache.read().get(slug).map(|(t, p)| (t.elapsed().as_secs(), p.clone()))
+    }
+
     pub async fn price(&self, slug: &str) -> Result<PriceSummary> {
         if let Some((t, p)) = self.price_cache.read().get(slug) {
             if t.elapsed().as_secs() < 300 {

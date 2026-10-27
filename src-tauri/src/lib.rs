@@ -296,6 +296,7 @@ pub fn run() {
             commands::export_data,
             commands::import_data,
             commands::market_stats,
+            commands::relic_overview,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
