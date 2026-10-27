@@ -2,7 +2,10 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "main + overlay windows",
-  "windows": ["main", "overlay"],
+  "windows": [
+    "main",
+    "overlay"
+  ],
   "permissions": [
     "core:default",
     "core:window:allow-show",
@@ -15,6 +18,8 @@
     "core:event:default",
     "opener:default",
     "global-shortcut:allow-register",
-    "global-shortcut:allow-unregister"
+    "global-shortcut:allow-unregister",
+    "updater:default",
+    "process:allow-restart"
   ]
 }

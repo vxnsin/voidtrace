@@ -26,3 +26,5 @@ chrono.workspace = true
 tracing.workspace = true
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 parking_lot = "0.12"
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"

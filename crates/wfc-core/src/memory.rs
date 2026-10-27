@@ -373,6 +373,26 @@ fn match_object(s: &[u8]) -> Option<usize> {
 pub fn find_pid() -> Option<u32> {
     None
 }
+
+/// Process id of the window in front; the overlay hides when that isn't the game.
+#[cfg(windows)]
+pub fn foreground_pid() -> Option<u32> {
+    use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId};
+    unsafe {
+        let h = GetForegroundWindow();
+        if h.0.is_null() {
+            return None;
+        }
+        let mut pid = 0u32;
+        GetWindowThreadProcessId(h, Some(&mut pid as *mut u32));
+        (pid != 0).then_some(pid)
+    }
+}
+
+#[cfg(not(windows))]
+pub fn foreground_pid() -> Option<u32> {
+    None
+}
 #[cfg(not(windows))]
 pub fn read_inventory_json() -> Result<serde_json::Value> {
     anyhow::bail!("memory scan only on Windows")

@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
 import { api, type Status } from "../api";
+import { getVersion } from "@tauri-apps/api/app";
+import { checkForUpdate, installUpdate, updates } from "../updates";
 
 defineProps<{ status: Status | null }>();
 const emit = defineEmits(["refresh"]);
-const overlay = ref(true);
 const memorySync = ref(false);
 const introMode = ref<"full" | "quick" | "off">("full");
 function setIntro(m: "full" | "quick" | "off") {
@@ -13,6 +14,12 @@ function setIntro(m: "full" | "quick" | "off") {
 }
 const launchWithGame = ref(false);
 async function rerunSetup() { await api.setSetting("setup_done", "0"); window.location.reload(); }
+const version = ref("");
+const autoUpdate = ref(true);
+const checked = ref(false);
+async function toggleAutoUpdate() { autoUpdate.value = !autoUpdate.value; await api.setSetting("update_auto", autoUpdate.value ? "1" : "0"); }
+async function checkNow() { await checkForUpdate(); checked.value = true; }
+onMounted(async () => { version.value = await getVersion(); autoUpdate.value = (await api.getSetting("update_auto")) !== "0"; });
 async function toggleLaunch() {
   try {
     await api.setLaunchWithGame(!launchWithGame.value);
@@ -27,7 +34,6 @@ const busy = ref(false);
 
 async function load() {
   try { introMode.value = (localStorage.getItem("intro_mode") as typeof introMode.value) || "full"; } catch {}
-  overlay.value = (await api.getSetting("overlay_enabled")) !== "0";
   memorySync.value = (await api.getSetting("memory_sync")) === "1";
   launchWithGame.value = (await api.getSetting("launch_with_game")) === "1";
   rawLog.value = (await api.getSetting("log_raw")) === "1";
@@ -35,7 +41,6 @@ async function load() {
   patterns.value = (await api.getSetting("log_patterns")) ?? "";
 }
 async function save() {
-  await api.setSetting("overlay_enabled", overlay.value ? "1" : "0");
   await api.setSetting("memory_sync", memorySync.value ? "1" : "0");
   await api.setSetting("log_raw", rawLog.value ? "1" : "0");
   await api.setSetting("ocr_crop", JSON.stringify(crop.value));
@@ -57,7 +62,7 @@ onMounted(load);
     <div class="row">
       <span class="muted">Intro sequence:</span>
       <div class="modes">
-        <button :class="{ on: introMode === 'full' }" @click="setIntro('full')">Full 8s</button>
+        <button :class="{ on: introMode === 'full' }" @click="setIntro('full')">Full 5s</button>
         <button :class="{ on: introMode === 'quick' }" @click="setIntro('quick')">Quick 2s</button>
         <button :class="{ on: introMode === 'off' }" @click="setIntro('off')">Off</button>
       </div>
@@ -67,9 +72,21 @@ onMounted(load);
     <label class="row" style="margin-top:10px"><input type="checkbox" :checked="launchWithGame" @change="toggleLaunch" /> Launch with Warframe</label>
     <p class="muted" style="margin:6px 0 0">Starts hidden in the tray when you sign in to Windows and opens as soon as Warframe starts. Closing the window keeps it in the tray; quit from the tray icon.</p>
   </div>
+  <div class="card" style="margin-bottom:12px">
+    <h2 style="margin-top:0">Updates</h2>
+    <div class="row">
+      <span class="muted">Installed v{{ version }}</span>
+      <button class="btn" :disabled="updates.checking" @click="checkNow">{{ updates.checking ? "Checking…" : "Check now" }}</button>
+      <button v-if="updates.available" class="btn primary" :disabled="updates.installing" @click="installUpdate">{{ updates.installing ? `Installing ${Math.round(updates.progress * 100)}%` : `Install v${updates.available.version} & restart` }}</button>
+      <span v-else-if="checked && !updates.error" class="ok">Up to date.</span>
+      <span v-if="updates.error" class="error">{{ updates.error }}</span>
+    </div>
+    <pre v-if="updates.available?.body" class="notes">{{ updates.available.body }}</pre>
+    <label class="row" style="margin-top:10px"><input type="checkbox" :checked="autoUpdate" @change="toggleAutoUpdate" /> Check GitHub for new releases on start and every few hours</label>
+  </div>
   <div class="card">
     <h2 style="margin-top:0">Overlay</h2>
-    <label class="row"><input type="checkbox" v-model="overlay" /> Show relic reward overlay automatically</label>
+    <p class="muted" style="margin-top:0">The relic reward widget is added or removed in the in-game editor; reading the reward screen runs only while it is on screen.</p>
     <p class="muted">Warframe must run in <b>Borderless Fullscreen</b> for any overlay to be visible. Game language must be English for OCR matching.</p>
     <div class="row">
       <span class="muted">Reward row crop (fractions of screen):</span>
@@ -107,3 +124,7 @@ onMounted(load);
     <span :class="msg.startsWith('Saved') || msg.includes('refreshed') ? 'ok' : 'muted'">{{ msg }}</span>
   </div>
 </template>
+
+<style scoped>
+.notes { white-space: pre-wrap; margin: 10px 0 0; color: var(--fg2); font: inherit; max-height: 200px; overflow: auto; }
+</style>

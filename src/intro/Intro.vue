@@ -6,7 +6,7 @@ const emit = defineEmits<{ done: [] }>();
 const props = defineProps<{ backendOk: boolean }>();
 
 type Mode = "full" | "quick" | "off";
-const DURATION: Record<Mode, number> = { full: 8000, quick: 2000, off: 0 };
+const DURATION: Record<Mode, number> = { full: 5000, quick: 2000, off: 0 };
 const mode = ref<Mode>("full");
 try { mode.value = (localStorage.getItem("intro_mode") as Mode) || "full"; } catch {}
 const finished = ref(false);
@@ -67,8 +67,8 @@ function frame(now: number) {
   ctx.textBaseline = "top";
 
   const cx = cols / 2, cy = ey + eh * 0.45;
-  const reveal = Math.min(1, p * 1.6);         // emblem builds up over the first ~60%
-  const rays = Math.min(1, Math.max(0, (p - 0.1) / 0.7));
+  const reveal = Math.min(1, p * 2.8);         // emblem builds up over the first ~35%
+  const rays = Math.min(1, Math.max(0, (p - 0.05) / 0.6));
   const maxR = Math.hypot(cols, rows);
 
   for (let y = 0; y < rows; y++) {
@@ -168,7 +168,7 @@ marker ......... wedge · crimson</pre>
     <div class="status">BACKEND / {{ props.backendOk ? "AVAILABLE" : "STARTING" }}</div>
     <div class="controls">
       <div class="modes">
-        <button :class="{ on: mode === 'full' }" @click.stop="setMode('full')">Full 8s</button>
+        <button :class="{ on: mode === 'full' }" @click.stop="setMode('full')">Full 5s</button>
         <button :class="{ on: mode === 'quick' }" @click.stop="setMode('quick')">Quick 2s</button>
         <button :class="{ on: mode === 'off' }" @click.stop="setMode('off')">Off</button>
       </div>

@@ -8,12 +8,12 @@
 A Warframe companion for Windows. Relic prices on screen, your warframe.market account,
 mastery and trades in one window — without Overwolf, ads or a subscription.
 
-![version](https://img.shields.io/badge/version-0.2.0-c8102e?style=flat-square)
+![version](https://img.shields.io/badge/version-0.3.0-c8102e?style=flat-square)
 ![platform](https://img.shields.io/badge/Windows-10%20%2F%2011-1d1d21?style=flat-square)
 ![stack](https://img.shields.io/badge/Rust%20%C2%B7%20Tauri%20%C2%B7%20Vue-1d1d21?style=flat-square)
 ![license](https://img.shields.io/badge/license-MIT-1d1d21?style=flat-square)
 
-[How it works](#how-it-works) · [What it touches](#what-it-touches) · [Build](#build)
+[Install](#install) · [How it works](#how-it-works) · [What it touches](#what-it-touches) · [Build](#build)
 
 <img src="docs/screenshot.png" alt="VoidTrace relic planner" width="880">
 
@@ -29,6 +29,11 @@ cheapest online price or post a buy order, edit and hide listings, read your cha
 trade finishes in game, VoidTrace asks which listing it was, closes the order on the market,
 logs the sale and takes it off your inventory. Your market status follows the game — in a
 mission, in the orbiter, and invisible once you quit, so nobody whispers a player who left.
+
+Widgets sit on top of the game where you put them: world cycles, fissures filtered your way,
+Baro, your session and the relic rewards. Pin them to the overlay or keep them on the
+dashboard, and move them in game with a hotkey. The Trading tab pulls your closed orders from
+warframe.market and shows what you sold, bought and earned, per day and per item.
 
 If you allow it to read the inventory from the game (see below), mastery, foundry, plat and
 ducat history come straight from your account, no account id needed. It can start with
@@ -57,8 +62,9 @@ OAuth isn't open yet.
 
 ## What it touches
 
-`EE.log` is only read. The screen is captured once per relic reward screen. Nothing is sent
-anywhere except to api.warframe.market (your own account) and DE's public endpoints.
+`EE.log` is only read. The screen is captured once per relic reward screen. Requests go to
+api.warframe.market (your own account), DE's public endpoints, api.warframestat.us (world
+state for the widgets) and GitHub (update check). Nothing else leaves your PC.
 
 > [!IMPORTANT]
 > Reading the inventory from the game process is **off by default**. When you turn it on,
@@ -66,6 +72,12 @@ anywhere except to api.warframe.market (your own account) and DE's public endpoi
 > `ReadProcessMemory` — no injection, no hooks, no offsets, nothing written. Overwolf
 > companions read the same data, but outside Overwolf it is not covered by DE's third-party
 > policy. Your call.
+
+## Install
+
+Grab `VoidTrace_x.y.z_x64-setup.exe` from the [latest release](https://github.com/vxnsin/voidtrace/releases/latest)
+and run it. Installed copies check GitHub for new releases and update themselves (signed,
+and never while Warframe is running); that can be turned off in Settings.
 
 ## Build
 
@@ -102,7 +114,7 @@ open `www.warframe.com/api/user-data` and copy `user_id`. Don't spam it — DE r
 **Reward crop** sets where the OCR looks, in fractions of the screen; *Test OCR now* and
 *Preview overlay* help tune it for non-16:9 screens.
 
-**Intro** runs Full (8 s), Quick (2 s) or Off; Esc skips it.
+**Intro** runs Full (5 s), Quick (2 s) or Off; Esc skips it.
 
 </details>
 

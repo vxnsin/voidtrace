@@ -20,6 +20,7 @@ pub mod ocr;
 pub mod profile;
 pub mod relic;
 pub mod riven;
+pub mod worldstate;
 pub mod ws;
 
 use std::path::PathBuf;

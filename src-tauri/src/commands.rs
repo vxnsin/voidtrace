@@ -129,6 +129,7 @@ pub struct RelicHit {
     pub relic: String,
     pub rarity: String,
     pub chance: [f32; 4],
+    pub vaulted: bool,
 }
 
 #[tauri::command]
@@ -136,7 +137,10 @@ pub fn relics_for(st: State<AppState>, item: String) -> R<Vec<RelicHit>> {
     let ex = export(&st)?;
     Ok(wfc_core::relic::relics_for(&ex, &item)
         .into_iter()
-        .map(|(relic, rarity, chance)| RelicHit { relic, rarity, chance })
+        .map(|(relic, rarity, chance)| {
+            let vaulted = st.market.find_item_exact(&format!("{relic} Relic")).map(|i| i.vaulted).unwrap_or(false);
+            RelicHit { relic, rarity, chance, vaulted }
+        })
         .collect())
 }
 
@@ -186,6 +190,50 @@ pub fn market_items_by_id(st: State<AppState>, ids: Vec<String>) -> std::collect
 #[tauri::command]
 pub fn game_running() -> bool {
     wfc_core::memory::find_pid().is_some()
+}
+
+/// Is the game window in front right now (the overlay hides otherwise).
+#[tauri::command]
+pub fn game_focused() -> bool {
+    let pid = wfc_core::memory::find_pid();
+    pid.is_some() && wfc_core::memory::foreground_pid() == pid
+}
+
+/// Latest world state (cycles, fissures, Baro …), refreshed once a minute.
+#[tauri::command]
+pub fn worldstate(st: State<AppState>) -> Option<serde_json::Value> {
+    st.worldstate.read().clone()
+}
+
+/// Turn the overlay's edit mode on or off (also bound to the hotkey).
+#[tauri::command]
+pub fn overlay_edit(app: AppHandle, on: bool) {
+    crate::overlay::set_edit(&app, on);
+}
+
+/// Rebind the hotkey of an overlay action ("edit" or "hud") and remember it.
+#[tauri::command]
+pub fn set_overlay_hotkey(app: AppHandle, st: State<AppState>, action: String, key: String) -> R<()> {
+    let (_, setting, _) = crate::overlay::HOTKEYS.iter().find(|(a, _, _)| *a == action).ok_or("unknown hotkey action")?;
+    crate::overlay::register_hotkey(&app, &action, &key).map_err(err)?;
+    st.db.set(setting, &key).map_err(err)
+}
+
+/// Current hotkeys by action.
+#[tauri::command]
+pub fn overlay_hotkeys(st: State<AppState>) -> std::collections::HashMap<String, String> {
+    st.hotkeys.read().clone()
+}
+
+/// Whether the widgets are hidden by the HUD hotkey.
+#[tauri::command]
+pub fn hud_hidden(st: State<AppState>) -> bool {
+    *st.hud_hidden.read()
+}
+
+#[tauri::command]
+pub fn set_hud_hidden(app: AppHandle, hidden: bool) {
+    crate::overlay::set_hud_hidden(&app, hidden);
 }
 
 /// Start with Windows (hidden, `--background`) and open when Warframe starts.
@@ -282,6 +330,13 @@ pub fn open_url(app: AppHandle, url: String) -> R<()> {
         return Err("only warframe.market links".into());
     }
     app.opener().open_url(url, None::<&str>).map_err(err)
+}
+
+/// Closed orders from the logged-in user's public warframe.market statistics.
+#[tauri::command]
+pub async fn wfm_closed_orders(st: State<'_, AppState>) -> R<Vec<wfc_core::market::ClosedOrder>> {
+    let name = st.db.get("wfm_name").filter(|n| !n.is_empty()).ok_or("log in to warframe.market first")?;
+    st.market.closed_orders(&name).await.map_err(err)
 }
 
 #[tauri::command]

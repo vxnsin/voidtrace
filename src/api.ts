@@ -10,13 +10,14 @@ export type Status = {
   ee_log: string;
   ee_log_exists: boolean;
 };
-export type MarketItem = { id: string; slug: string; name: string; icon: string; ducats: number; tradable: boolean; tags: string[] };
-export type PriceSummary = { slug: string; name: string; ducats: number; sell: number | null; buy: number | null; sell_count: number };
+export type MarketItem = { id: string; slug: string; name: string; icon: string; ducats: number; tradable: boolean; tags: string[]; vaulted: boolean };
+export type PriceSummary = { slug: string; name: string; ducats: number; sell: number | null; buy: number | null; sell_count: number; vaulted: boolean };
+export type ClosedOrder = { id: string; kind: "buy" | "sell"; quantity: number; platinum: number; closed: string; slug: string; name: string };
 export type Order = { id: string; type: "buy" | "sell"; platinum: number; quantity: number; visible: boolean; itemId: string; rank?: number; user?: { ingameName: string; status: string; reputation: number } };
 export type MasteryItem = { unique_name: string; name: string; category: string; xp: number; max_xp: number; mastered: boolean; owned: boolean; mastery_points: number; image: string | null };
 export type MasterySummary = { items: MasteryItem[]; mastered: number; total: number; points: number; points_available: number; rank: number };
-export type RelicHit = { relic: string; rarity: string; chance: [number, number, number, number] };
-export type DropInfo = { item: string; rarity: string; chance: [number, number, number, number]; plat: number | null; ducats: number; slug: string | null };
+export type RelicHit = { relic: string; rarity: string; chance: [number, number, number, number]; vaulted: boolean };
+export type DropInfo = { item: string; rarity: string; chance: [number, number, number, number]; plat: number | null; ducats: number; slug: string | null; vaulted: boolean };
 export type RelicPlan = { relic: string; drops: DropInfo[]; expected_plat: number[]; expected_ducats: number[] };
 export type InvRow = { slug: string; name: string; quantity: number };
 export type StatInput = { stat: string; value: number; negative: boolean };
@@ -34,7 +35,12 @@ export type Chat = { id: string; chat_with: ChatUser[]; unread_count: number; la
 export type ChatMessage = { id: string; message: string; message_from: string; send_date: string; raw_message?: string | null };
 export type SyncResult ={ platinum: number; credits: number; ducats: number; items_total: number; items_tradeable: number; seconds: number };
 export type RewardHit ={ raw: string; price: PriceSummary | null; best: boolean };
-export type GameEvent = { kind: string; name?: string; relic?: string; line?: string };
+export type GameEvent = { kind: string; name?: string; relic?: string; line?: string; focused?: boolean };
+/** api.warframestat.us subset (see wfc-core/worldstate.rs); timestamps are ISO strings. */
+export type Cycle = { activation: string; expiry: string; state: string };
+export type Fissure = { id: string; expiry: string; node: string; missionType: string; enemy: string; tier: string; tierNum: number; isStorm: boolean; isHard: boolean };
+export type VoidTrader = { activation: string; expiry: string; location: string; inventory: { item: string; ducats: number; credits: number }[] };
+export type WorldState = { cetusCycle?: Cycle; vallisCycle?: Cycle; cambionCycle?: Cycle; zarimanCycle?: Cycle; duviriCycle?: Cycle; earthCycle?: Cycle; fissures?: Fissure[]; voidTrader?: VoidTrader };
 
 const iconUrl = (icon: string) => `https://warframe.market/static/assets/${icon}`;
 const icons = new Map<string, Promise<string | null>>();
@@ -52,6 +58,13 @@ export const api = {
   setSetting: (key: string, value: string) => invoke<void>("set_setting", { key, value }),
   setLaunchWithGame: (on: boolean) => invoke<void>("set_launch_with_game", { on }),
   gameRunning: () => invoke<boolean>("game_running"),
+  gameFocused: () => invoke<boolean>("game_focused"),
+  worldstate: () => invoke<WorldState | null>("worldstate"),
+  overlayEdit: (on: boolean) => invoke<void>("overlay_edit", { on }),
+  setOverlayHotkey: (action: "edit" | "hud", key: string) => invoke<void>("set_overlay_hotkey", { action, key }),
+  overlayHotkeys: () => invoke<Record<string, string>>("overlay_hotkeys"),
+  hudHidden: () => invoke<boolean>("hud_hidden"),
+  setHudHidden: (hidden: boolean) => invoke<void>("set_hud_hidden", { hidden }),
   getSetting: (key: string) => invoke<string | null>("get_setting", { key }),
   loadProfile: (playerId: string) => invoke<MasterySummary>("load_profile", { playerId }),
   overlayPreview: () => invoke<void>("overlay_preview"),
@@ -67,6 +80,7 @@ export const api = {
   wfmLogin: (email: string, password: string) => invoke<string>("wfm_login", { email, password }),
   wfmLogout: () => invoke<void>("wfm_logout"),
   wfmMyOrders: () => invoke<Order[]>("wfm_my_orders"),
+  wfmClosedOrders: () => invoke<ClosedOrder[]>("wfm_closed_orders"),
   wfmCreateOrder: (itemId: string, sell: boolean, platinum: number, quantity: number, rank?: number) =>
     invoke<Order>("wfm_create_order", { itemId, sell, platinum, quantity, rank }),
   wfmUpdateOrder: (id: string, platinum: number, quantity: number, visible: boolean) =>
