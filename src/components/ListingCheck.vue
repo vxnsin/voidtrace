@@ -21,7 +21,13 @@ async function load() {
   } catch (e) { msg.value = String(e); }
 }
 const have = (slug?: string) => props.rows.find((r) => r.slug === slug)?.quantity ?? 0;
-const stale = computed(() => orders.value.filter((o) => o.type === "sell" && have(items.value[o.itemId]?.slug) < o.quantity));
+// Only orders whose item is known; otherwise the row is an id nobody can judge.
+const stale = computed(() =>
+  orders.value.filter((o) => {
+    const slug = items.value[o.itemId]?.slug;
+    return o.type === "sell" && !!slug && have(slug) < o.quantity;
+  }),
+);
 
 async function fix(o: Order) {
   const n = have(items.value[o.itemId]?.slug);

@@ -186,7 +186,13 @@ pub async fn discord(http: &reqwest::Client, url: &str, n: &Notice) -> anyhow::R
     if let Some(i) = &n.icon {
         embed["thumbnail"] = json!({ "url": i });
     }
-    let r = http.post(url).json(&json!({ "username": "VoidTrace", "embeds": [embed] })).send().await?;
+    // The webhook URL is the secret; keep it out of error text and logs.
+    let r = http
+        .post(url)
+        .json(&json!({ "username": "VoidTrace", "embeds": [embed] }))
+        .send()
+        .await
+        .map_err(|e| e.without_url())?;
     if !r.status().is_success() {
         let status = r.status();
         anyhow::bail!("{status} {}", r.text().await.unwrap_or_default().chars().take(200).collect::<String>());

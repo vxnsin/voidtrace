@@ -9,6 +9,7 @@ const weapons = ref<RivenWeapon[]>([]);
 const q = ref("");
 const weapon = computed(() => weapons.value.find((w) => w.name.toLowerCase() === q.value.trim().toLowerCase()) ?? null);
 const res = ref<RivenSearch | null>(null);
+const searched = ref("");
 const busy = ref(false);
 const err = ref("");
 const snipes = ref<RivenSnipe[]>([]);
@@ -19,9 +20,13 @@ const label = (s: string) => s.replace(/_/g, " ");
 async function search() {
   if (!weapon.value) { err.value = "Pick a weapon from the list."; return; }
   busy.value = true; err.value = "";
+  const slug = weapon.value.slug;
   try {
-    res.value = await extra.rivenSearch(weapon.value.slug, weapon.value.name);
-    if (max.value == null && res.value.prices.median) max.value = Math.round(res.value.prices.median * 0.8);
+    const r = await extra.rivenSearch(slug, weapon.value.name);
+    // Another weapon: the price limit and stats picked for the last one don't apply.
+    if (slug !== searched.value) { max.value = null; pos.value = []; searched.value = slug; }
+    res.value = r;
+    if (max.value == null && r.prices.median) max.value = Math.round(r.prices.median * 0.8);
   } catch (e) { err.value = String(e); } finally { busy.value = false; }
 }
 const unrolled = computed(() => res.value?.weekly.find((w) => !w.rerolled));

@@ -135,7 +135,8 @@ let timer;
 function connect() {
   const es = new EventSource("/api/events?t=" + T);
   const dot = document.getElementById("dot");
-  es.onopen = () => dot.classList.add("live");
+  // Events sent while the phone slept are gone; ask for the state again.
+  es.onopen = () => { dot.classList.add("live"); load(); };
   es.onerror = () => dot.classList.remove("live");
   es.onmessage = (m) => {
     let ev; try { ev = JSON.parse(m.data); } catch (e) { return; }
@@ -146,7 +147,8 @@ function connect() {
   };
 }
 load(); connect();
-setInterval(render, 1000);
+// Not while arranging: replacing a button mid-tap loses the tap.
+setInterval(() => { if (!document.body.classList.contains("edit")) render(); }, 1000);
 setInterval(load, 60000);
 </script>
 </body>

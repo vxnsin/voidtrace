@@ -317,7 +317,8 @@ fn median(v: &mut [f32]) -> f32 {
         return 0.0;
     }
     v.sort_by(|a, b| a.total_cmp(b));
-    v[v.len() / 2]
+    let m = v.len() / 2;
+    if v.len() % 2 == 0 { (v[m - 1] + v[m]) / 2.0 } else { v[m] }
 }
 
 /// Price picture from current buyout auctions: the middle of the market

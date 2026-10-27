@@ -101,7 +101,16 @@ const done = () => { sel.value = null; api.overlayEdit(false); };
 
 // The settings panel can be dragged by its header; the spot is remembered.
 const panelPos = ref<{ x: number; y: number } | null>(null);
-try { const s = localStorage.getItem("overlay_panel_pos"); if (s) panelPos.value = JSON.parse(s); } catch {}
+try {
+  // Saved on a bigger screen it could sit off this one; keep the header reachable.
+  const s = JSON.parse(localStorage.getItem("overlay_panel_pos") ?? "null");
+  if (Number.isFinite(s?.x) && Number.isFinite(s?.y)) {
+    panelPos.value = {
+      x: Math.min(Math.max(0, s.x), Math.max(0, window.innerWidth - 200)),
+      y: Math.min(Math.max(0, s.y), Math.max(0, window.innerHeight - 60)),
+    };
+  }
+} catch {}
 const panelStyle = computed(() => panelPos.value ? { left: panelPos.value.x + "px", top: panelPos.value.y + "px", right: "auto", transform: "none" } : {});
 function panelDown(e: PointerEvent) {
   if ((e.target as HTMLElement).closest("button")) return;

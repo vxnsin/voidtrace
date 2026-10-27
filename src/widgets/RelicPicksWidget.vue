@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import { api } from "../api";
 import { relicOverview, squadValue, type RelicRow } from "../relics";
 import { live } from "./live";
 import type { WidgetCfg } from "./registry";
@@ -16,7 +17,11 @@ async function load() {
   try { rows.value = (await relicOverview(true)).rows; } catch { rows.value = []; }
   loaded.value = true;
 }
-watch(() => live.relicSelect || live.editing || inApp, (on) => on && load(), { immediate: true });
+// Each trigger on its own: or-ed together with inApp the value never changes.
+watch([() => live.relicSelect, () => live.editing], ([sel, edit]) => (sel || edit || inApp) && load(), { immediate: true });
+let off: (() => void) | undefined;
+onMounted(async () => { off = await api.on("inventory-synced", () => load()); });
+onUnmounted(() => off?.());
 
 const best = computed(() => {
   const by = props.cfg.relicSort ?? "plat";

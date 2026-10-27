@@ -25,7 +25,7 @@ const price = (a: { buyout: number | null; starting: number }) => a.buyout ?? a.
         </div>
       </div>
       <template v-if="cfg.size === 'full'">
-        <div class="h">Similar listings <i>{{ live.riven.similar.length ? `${live.riven.similar.length} · from ${live.riven.prices.min ?? "?"}p` : "none online" }}</i></div>
+        <div class="h">Similar listings <i>{{ live.riven.similar.length ? `${live.riven.similar.length} · from ${Math.min(...live.riven.similar.map(price))}p` : "none online" }}</i></div>
         <div class="list">
           <div v-for="a in live.riven.similar.slice(0, 4)" :key="a.id" class="row">
             <span class="hi">{{ price(a) }}p</span>

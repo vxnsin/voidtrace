@@ -649,6 +649,40 @@ pub struct RelicOverview {
 }
 
 static WARMING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// Slugs whose price fetch failed, with when. They are skipped for half an
+/// hour, otherwise the UI's "ask again" after each pass would retry them forever.
+static PRICE_FAILED: std::sync::LazyLock<parking_lot::Mutex<std::collections::HashMap<String, std::time::Instant>>> =
+    std::sync::LazyLock::new(Default::default);
+
+fn drop_failed(slugs: &mut Vec<String>) {
+    let failed = PRICE_FAILED.lock();
+    slugs.retain(|s| failed.get(s).is_none_or(|t| t.elapsed().as_secs() >= 1800));
+}
+
+/// Fetch missing prices one by one at the market's pace and tell the UI via
+/// `event` every ten and at the end. `flag` keeps it to one pass at a time.
+fn warm_prices(app: &AppHandle, slugs: Vec<String>, event: &'static str, flag: &'static std::sync::atomic::AtomicBool) {
+    use std::sync::atomic::Ordering::SeqCst;
+    if slugs.is_empty() || flag.swap(true, SeqCst) {
+        return;
+    }
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let st = app.state::<AppState>();
+        for (i, slug) in slugs.iter().enumerate() {
+            if let Err(e) = st.market.price(slug).await {
+                tracing::debug!("price {slug}: {e}");
+                PRICE_FAILED.lock().insert(slug.clone(), std::time::Instant::now());
+            }
+            if i % 10 == 9 || i + 1 == slugs.len() {
+                use tauri::Emitter;
+                let _ = app.emit(event, (i + 1, slugs.len()));
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+        }
+        flag.store(false, SeqCst);
+    });
+}
 
 /// Every relic (or only owned ones) with expected values from prices known so
 /// far. Missing prices are fetched in the background at the market's pace;
@@ -679,24 +713,9 @@ pub fn relic_overview(app: AppHandle, st: State<AppState>, only_owned: bool) -> 
     }
     missing.sort();
     missing.dedup();
+    drop_failed(&mut missing);
     let pending = missing.len();
-    if pending > 0 && !WARMING.swap(true, std::sync::atomic::Ordering::SeqCst) {
-        let app = app.clone();
-        tauri::async_runtime::spawn(async move {
-            let st = app.state::<AppState>();
-            for (i, slug) in missing.iter().enumerate() {
-                if let Err(e) = st.market.price(slug).await {
-                    tracing::debug!("price {slug}: {e}");
-                }
-                if i % 10 == 9 || i + 1 == missing.len() {
-                    use tauri::Emitter;
-                    let _ = app.emit("relic-prices", (i + 1, missing.len()));
-                }
-                tokio::time::sleep(std::time::Duration::from_millis(400)).await;
-            }
-            WARMING.store(false, std::sync::atomic::Ordering::SeqCst);
-        });
-    }
+    warm_prices(&app, missing, "relic-prices", &WARMING);
     Ok(RelicOverview { rows, synced: st.db.get("owned_relics").is_some(), pending })
 }
 
@@ -890,22 +909,9 @@ pub fn mastery_routes(app: AppHandle, st: State<AppState>) -> R<MasteryRoutes> {
 
     missing_prices.sort();
     missing_prices.dedup();
+    drop_failed(&mut missing_prices);
     let pending = missing_prices.len();
-    if pending > 0 && !MASTERY_WARMING.swap(true, std::sync::atomic::Ordering::SeqCst) {
-        let app = app.clone();
-        tauri::async_runtime::spawn(async move {
-            let st = app.state::<AppState>();
-            for (i, slug) in missing_prices.iter().enumerate() {
-                let _ = st.market.price(slug).await;
-                if i % 10 == 9 || i + 1 == missing_prices.len() {
-                    use tauri::Emitter;
-                    let _ = app.emit("mastery-prices", (i + 1, missing_prices.len()));
-                }
-                tokio::time::sleep(std::time::Duration::from_millis(400)).await;
-            }
-            MASTERY_WARMING.store(false, std::sync::atomic::Ordering::SeqCst);
-        });
-    }
+    warm_prices(&app, missing_prices, "mastery-prices", &MASTERY_WARMING);
 
     let skills: serde_json::Value = st.db.get("intrinsics").and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default();
     let intrinsics = foundry::INTRINSICS

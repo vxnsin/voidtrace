@@ -40,8 +40,10 @@ const shown = computed(() => rows.value.filter((r) => {
   return true;
 }));
 
+const setsRef = ref<InstanceType<typeof InventorySets> | null>(null);
 async function load() {
   rows.value = await api.inventory();
+  setsRef.value?.load();
   for (const r of rows.value) api.marketPrice(r.slug).then((p) => (prices.value[r.slug] = p)).catch(() => {});
 }
 async function search() {
@@ -123,7 +125,7 @@ onMounted(async () => {
     </tbody>
   </table>
   <h2>Sets</h2>
-  <InventorySets :logged-in="!!status?.wfm_logged_in" />
+  <InventorySets ref="setsRef" :logged-in="!!status?.wfm_logged_in" />
 
   <template v-if="status?.wfm_logged_in">
     <h2>Listings</h2>

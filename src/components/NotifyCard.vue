@@ -18,7 +18,7 @@ async function save(patch: Partial<NotifyConfig>) {
 const flip = (list: string[], v: string) => (list.includes(v) ? list.filter((x) => x !== v) : [...list, v]);
 const fissureChip = (key: "tiers" | "missions", v: string) => save({ fissure: { ...cfg.value!.fissure, [key]: flip(cfg.value!.fissure[key], v) } });
 const cycleChip = (id: string) => save({ cycles: flip(cfg.value!.cycles.length ? cfg.value!.cycles : CYCLES.map((c) => c[0]), id) });
-const setLead = (e: Event) => save({ cycle_lead: Math.max(1, Number((e.target as HTMLInputElement).value) || 5) });
+const setLead = (e: Event) => save({ cycle_lead: Math.min(60, Math.max(1, Math.round(Number((e.target as HTMLInputElement).value)) || 5)) });
 </script>
 
 <template>

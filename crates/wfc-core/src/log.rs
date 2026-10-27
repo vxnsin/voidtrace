@@ -40,7 +40,9 @@ pub enum GameEvent {
     Raw { line: String },
 }
 
+/// Saved overrides may name only some patterns; the rest stay default.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Patterns {
     pub logged_in: String,
     pub mission_start: String,
@@ -49,12 +51,9 @@ pub struct Patterns {
     pub reward_done: String,
     pub trade_complete: String,
     pub relic_opened: String,
-    #[serde(default = "default_inventory_received")]
     pub inventory_received: String,
-    #[serde(default = "default_riven_screen")]
     pub riven_screen: String,
     /// Empty = off.
-    #[serde(default)]
     pub relic_select: String,
 }
 

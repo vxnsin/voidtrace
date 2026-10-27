@@ -422,6 +422,11 @@ pub fn read_inventory_json() -> Result<serde_json::Value> {
     anyhow::bail!("memory scan only on Windows")
 }
 
+#[cfg(not(windows))]
+pub fn walk_memory(_cb: impl FnMut(usize, &[u8])) -> Result<()> {
+    anyhow::bail!("memory scan only on Windows")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

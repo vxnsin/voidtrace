@@ -125,6 +125,8 @@ pub async fn start(app: &AppHandle, port: u16) -> anyhow::Result<DashInfo> {
 
 pub fn stop(app: &AppHandle) {
     if let Some(r) = RUNNING.lock().take() {
+        // The listeners that would clear it go away with the server.
+        *REWARDS.lock() = Value::Null;
         let _ = r.stop.send(());
         for id in r.listeners {
             app.unlisten(id);

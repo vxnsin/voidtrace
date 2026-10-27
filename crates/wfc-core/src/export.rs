@@ -164,7 +164,8 @@ impl Export {
         };
 
         if let Some(cached) = Self::load_cached() {
-            if cached.index_hash == index_hash {
+            // Empty recipes or regions mean a fetch failed last time; try again.
+            if cached.index_hash == index_hash && !cached.recipes.is_empty() && !cached.regions.is_empty() {
                 return Ok(cached);
             }
         }

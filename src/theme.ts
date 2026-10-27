@@ -61,7 +61,10 @@ export const mix = (a: string, b: string, t: number) => {
   const x = rgb(a), y = rgb(b);
   return hex(x.map((v, i) => v + (y[i] - v) * t));
 };
-const luma = (c: string) => { const [r, g, b] = rgb(c); return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255; };
+// WCAG relative luminance, for picking black or white text on a colour.
+const lin = (v: number) => (v /= 255) <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+const luma = (c: string) => { const [r, g, b] = rgb(c).map(lin); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+const onColor = (c: string) => { const l = luma(c); return (l + 0.05) / 0.05 >= 1.05 / (l + 0.05) ? "#000000" : "#ffffff"; };
 
 /** Every CSS variable a theme sets. */
 export function tokens(t: Theme): Record<string, string> {
@@ -69,7 +72,7 @@ export function tokens(t: Theme): Record<string, string> {
   return {
     bg: t.bg, bg2: m(0.03), bg3: m(0.06), border: m(0.1), dim: m(0.18), muted: m(0.38), fg2: m(0.75),
     fg: t.fg, accent: t.accent, accent2: t.hi, ok: t.ok, warn: t.warn, bad: t.accent,
-    "on-accent": luma(t.accent) > 0.55 ? "#000000" : t.light ? "#ffffff" : "#000000",
+    "on-accent": onColor(t.accent),
     wbg: t.widget, two: String(t.widgetOpacity), "img-filter": t.mono ? "grayscale(1) contrast(1.1)" : "none",
     ...(t.tokens ?? {}),
   };

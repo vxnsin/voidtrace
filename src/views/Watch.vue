@@ -47,15 +47,19 @@ async function choose(i: MarketItem) {
   const p = await api.marketPrice(i.slug).catch(() => null);
   if (p?.sell && max.value == null) max.value = Math.max(1, Math.round(p.sell * 0.85));
 }
+// Saved first; on an error the list goes back to what is stored.
+async function persist(next: PriceAlert[]) {
+  const prev = alerts.value;
+  alerts.value = next;
+  try { await notifyApi.setAlerts(next); err.value = ""; return true; } catch (e) { alerts.value = prev; err.value = String(e); return false; }
+}
 async function addAlert() {
   if (!pick.value || !max.value) return;
-  alerts.value = [...alerts.value.filter((a) => a.item_id !== pick.value!.id), { slug: pick.value.slug, name: pick.value.name, item_id: pick.value.id, max: max.value }];
-  await notifyApi.setAlerts(alerts.value);
-  pick.value = null; q.value = ""; max.value = null;
+  const a = { slug: pick.value.slug, name: pick.value.name, item_id: pick.value.id, max: Math.max(1, Math.round(max.value)) };
+  if (await persist([...alerts.value.filter((x) => x.item_id !== a.item_id), a])) { pick.value = null; q.value = ""; max.value = null; }
 }
 async function removeAlert(a: PriceAlert) {
-  alerts.value = alerts.value.filter((x) => x.item_id !== a.item_id);
-  await notifyApi.setAlerts(alerts.value);
+  await persist(alerts.value.filter((x) => x.item_id !== a.item_id));
 }
 
 onMounted(async () => {

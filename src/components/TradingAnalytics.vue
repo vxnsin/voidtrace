@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { dataApi, type Datapoint, type ItemStats } from "../api";
 import { live, startLive } from "../widgets/live";
 import ItemIcon from "./ItemIcon.vue";
@@ -17,7 +17,7 @@ const setBase = (name: string) => (/ set$/i.test(name) ? name.replace(/ set$/i, 
 // counts against a sale today).
 const buyAvg = computed(() => {
   const m = new Map<string, { qty: number; cost: number }>();
-  for (const r of props.all.filter((r) => r.kind === "buy")) {
+  for (const r of props.all.filter((r) => r.kind === "buy" && r.quantity > 0)) {
     const e = m.get(norm(r.name)) ?? { qty: 0, cost: 0 };
     e.qty += r.quantity; e.cost += r.total; m.set(norm(r.name), e);
   }
@@ -93,7 +93,14 @@ const statsErr = ref("");
 async function loadStats() {
   stats.value = null; statsErr.value = "";
   if (!pick.value) return;
-  try { stats.value = await dataApi.marketStats(pick.value); } catch (e) { statsErr.value = String(e); }
+  // A slow answer for the previous pick must not land on the new one.
+  const slug = pick.value;
+  try {
+    const s = await dataApi.marketStats(slug);
+    if (slug === pick.value) stats.value = s;
+  } catch (e) {
+    if (slug === pick.value) statsErr.value = String(e);
+  }
 }
 const median = (v: number[]) => [...v].sort((a, b) => a - b)[Math.floor(v.length / 2)] ?? 0;
 const market = computed(() => {
@@ -125,10 +132,12 @@ const resurgence = computed(() => {
   return { names: [...mine.values()].slice(0, 10), until: live.world?.vaultTrader?.expiry };
 });
 
-onMounted(() => {
-  startLive();
-  if (traded.value.length) { pick.value = traded.value[0].slug; loadStats(); }
-});
+onMounted(startLive);
+// The ledger arrives after mount; pick the first item then (and again if a
+// re-sync drops the current one).
+watch(traded, (t) => {
+  if (t.length && !t.some((x) => x.slug === pick.value)) { pick.value = t[0].slug; loadStats(); }
+}, { immediate: true });
 </script>
 
 <template>

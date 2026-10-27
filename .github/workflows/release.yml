@@ -38,9 +38,11 @@ jobs:
           includeUpdaterJson: true
 
   # AppImage and .deb; the market, trading, planner, foundry and widgets work,
-  # OCR and the memory read are Windows-only for now (see README).
+  # OCR and the memory read are Windows-only for now (see README). Runs after
+  # windows so the two never rewrite latest.json at the same time.
   linux:
     runs-on: ubuntu-22.04
+    needs: windows
     steps:
       - uses: actions/checkout@v4
       - name: Linux packages

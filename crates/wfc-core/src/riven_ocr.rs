@@ -174,9 +174,11 @@ pub fn suggest(class: WeaponClass) -> Suggest {
 /// (and none of its negatives as positives), cheapest first.
 pub fn similar(card: &RivenCard, auctions: &[RivenAuction], min_shared: usize) -> Vec<RivenAuction> {
     let pos: Vec<&str> = card.stats.iter().filter(|s| !s.negative).filter_map(|s| market_attr(&s.stat)).collect();
+    let neg: Vec<&str> = card.stats.iter().filter(|s| s.negative).filter_map(|s| market_attr(&s.stat)).collect();
     let mut out: Vec<(usize, RivenAuction)> = auctions
         .iter()
         .filter(|a| a.buyout.is_some() || a.direct)
+        .filter(|a| !a.attributes.iter().any(|t| t.positive && neg.contains(&t.url_name.as_str())))
         .filter_map(|a| {
             let shared = a.attributes.iter().filter(|t| t.positive && pos.contains(&t.url_name.as_str())).count();
             (shared >= min_shared.min(pos.len().max(1))).then(|| (shared, a.clone()))
