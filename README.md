@@ -6,7 +6,7 @@
 </picture>
 
 A Warframe companion for Windows. Relic prices on screen, your warframe.market account,
-mastery and trades in one window — without Overwolf, ads or a subscription.
+mastery and trades in one window.
 
 ![version](https://img.shields.io/badge/version-0.3.0-c8102e?style=flat-square)
 ![platform](https://img.shields.io/badge/Windows-10%20%2F%2011-1d1d21?style=flat-square)
