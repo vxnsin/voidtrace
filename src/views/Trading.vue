@@ -203,9 +203,9 @@ onMounted(load);
 .col { flex: 1 1 0; height: 100%; display: flex; align-items: flex-end; justify-content: center; gap: 1px; min-width: 0; }
 .col i { display: block; width: 40%; max-width: 12px; }
 .col .s { background: var(--accent2); opacity: .85; } .col .b { background: var(--muted); }
-.col:hover { background: rgba(255, 255, 255, .03); }
+.col:hover { background: var(--bg3); }
 .line { position: absolute; inset: 14px 0 0 0; width: 100%; height: calc(100% - 14px); pointer-events: none; }
 .xl { display: flex; justify-content: space-between; font-size: 10px; margin-top: 4px; }
-.tag.sold { color: var(--ok); border-color: #2f4a34; }
+.tag.sold { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 35%, transparent); }
 .stat.ok { color: var(--ok); } .stat.error { color: var(--accent); }
 </style>

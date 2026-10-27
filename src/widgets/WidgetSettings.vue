@@ -47,16 +47,16 @@ function toggle(key: "tiers" | "missions", v: string) {
 </template>
 
 <style scoped>
-.ws { display: grid; gap: 8px; font: 11px var(--mono); color: #b4b4b4; }
-.lbl { color: #6a6a70; text-transform: uppercase; letter-spacing: .1em; font-size: 10px; min-width: 76px; }
+.ws { display: grid; gap: 8px; font: 11px var(--mono); color: var(--fg); }
+.lbl { color: var(--muted); text-transform: uppercase; letter-spacing: .1em; font-size: 10px; min-width: 76px; }
 .seg { display: flex; align-items: center; gap: 0; flex-wrap: wrap; }
 .seg .lbl { margin-right: 8px; }
-.seg button { all: unset; cursor: pointer; padding: 3px 9px; border: 1px solid #2a2a2e; margin-left: -1px; color: #6a6a70; }
-.seg button.on { color: #e8e8e8; border-color: #c8102e; position: relative; }
+.seg button { all: unset; cursor: pointer; padding: 3px 9px; border: 1px solid var(--dim); margin-left: -1px; color: var(--muted); }
+.seg button.on { color: var(--accent2); border-color: var(--accent); position: relative; }
 .rng { display: flex; align-items: center; gap: 8px; }
-.rng input { flex: 1; accent-color: #c8102e; }
-.rng span:last-child { width: 38px; text-align: right; color: #e8e8e8; }
+.rng input { flex: 1; accent-color: var(--accent); }
+.rng span:last-child { width: 38px; text-align: right; color: var(--accent2); }
 .chips { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
-.chip { border: 1px solid #2a2a2e; padding: 1px 7px; cursor: pointer; color: #6a6a70; font-size: 10.5px; }
-.chip.on { border-color: #c8102e; color: #e8e8e8; }
+.chip { border: 1px solid var(--dim); padding: 1px 7px; cursor: pointer; color: var(--muted); font-size: 10.5px; }
+.chip.on { border-color: var(--accent); color: var(--accent2); }
 </style>

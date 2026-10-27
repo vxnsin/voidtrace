@@ -12,7 +12,7 @@ const ROWS: [string, keyof NonNullable<typeof live.world>][] = [
 ];
 const COLOR: Record<string, string> = {
   day: "#d8c27a", night: "#7b9fd6", warm: "#e09060", cold: "#8ec6e0", fass: "#c9a35b", vome: "#7fb0c9",
-  grineer: "#c8102e", corpus: "#6fa8dc", joy: "#d8c27a", anger: "#e06040", envy: "#7fc97f", sorrow: "#7b9fd6", fear: "#a080c0",
+  grineer: "var(--accent)", corpus: "#6fa8dc", joy: "#d8c27a", anger: "#e06040", envy: "#7fc97f", sorrow: "#7b9fd6", fear: "#a080c0",
 };
 // Phase lengths (s) in order, to roll a cycle forward locally when it expires
 // before the next world-state fetch.
@@ -48,7 +48,7 @@ const rows = computed(() =>
     <div class="cyc">
       <template v-for="r in rows" :key="r.name">
         <span class="dim">{{ r.name }}</span>
-        <span class="s"><b :style="{ color: COLOR[r.state] ?? '#e8e8e8' }">{{ r.state }}</b> · {{ r.left }}</span>
+        <span class="s"><b :style="{ color: COLOR[r.state] ?? 'var(--accent2)' }">{{ r.state }}</b> · {{ r.left }}</span>
         <div class="bar"><i :style="{ width: r.p * 100 + '%' }"></i></div>
       </template>
     </div>
@@ -57,8 +57,8 @@ const rows = computed(() =>
 
 <style scoped>
 .cyc { display: grid; grid-template-columns: 1fr auto; gap: 1px 16px; align-items: center; }
-.s { color: #e8e8e8; text-align: right; }
+.s { color: var(--accent2); text-align: right; }
 .s b { font-weight: 500; text-transform: capitalize; }
-.bar { grid-column: 1 / -1; height: 2px; background: #1d1d21; margin-bottom: 4px; }
-.bar i { display: block; height: 100%; background: #e8e8e8; }
+.bar { grid-column: 1 / -1; height: 2px; background: var(--border); margin-bottom: 4px; }
+.bar i { display: block; height: 100%; background: var(--accent2); }
 </style>

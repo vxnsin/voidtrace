@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { api, type Status, type SyncResult } from "../api";
+import { theme } from "../theme";
 
 // First start: walk through what the app needs, test the parts that tend to
 // break (log path, privilege level, memory scan) right here instead of later.
@@ -76,7 +77,7 @@ function rain() {
   size();
   addEventListener("resize", size);
   const frame = () => {
-    ctx.fillStyle = "rgba(7,7,8,0.18)";
+    ctx.fillStyle = theme.current.bg + "2e"; // ~18% alpha: trails fade out
     ctx.fillRect(0, 0, c.width, c.height);
     ctx.font = `${CH - 2}px ${getComputedStyle(document.documentElement).getPropertyValue("--mono")}`;
     for (let x = 0; x < cols; x++) {
@@ -84,7 +85,7 @@ function rain() {
       heads[x] += speed[x];
       if (heads[x] > rows + 10) heads[x] = -Math.random() * rows;
       const y = Math.floor(heads[x]);
-      ctx.fillStyle = x % 37 === 0 ? "rgba(200,16,46,.55)" : "rgba(150,150,155,.35)";
+      ctx.fillStyle = x % 37 === 0 ? theme.current.accent + "8c" : theme.current.fg + "59";
       ctx.fillText(glyphs[1 + Math.floor(Math.random() * (glyphs.length - 1))], x * CW, y * CH);
     }
     raf = requestAnimationFrame(frame);
@@ -190,7 +191,7 @@ section { min-height: 150px; }
 .check li.wait .st { color: var(--warn); animation: blink 1.2s steps(2) infinite; }
 @keyframes blink { 50% { opacity: .35; } }
 .bg { position: absolute; inset: 0; width: 100%; height: 100%; }
-.box { position: relative; background: rgba(11, 11, 13, .94); }
+.box { position: relative; background: color-mix(in srgb, var(--bg2) 94%, transparent); }
 .check li.info::before { content: " · "; }
 .steps-nav { justify-content: flex-end; margin-top: 18px; }
 </style>
