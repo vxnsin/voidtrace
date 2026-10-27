@@ -1,5 +1,5 @@
 import { reactive } from "vue";
-import { api, type GameEvent, type Notice, type RewardHit, type WorldState } from "../api";
+import { api, type GameEvent, type Notice, type RewardHit, type RivenScan, type WorldState } from "../api";
 
 // Shared live data for the widgets, in whichever window shows them (overlay
 // layer, Widgets tab). Started once per window.
@@ -8,6 +8,9 @@ export const live = reactive({
   world: null as WorldState | null,
   rewards: [] as RewardHit[],
   showRewards: false,
+  /** Last riven scan (hotkey); shown for a while. */
+  riven: null as RivenScan | null,
+  showRiven: false,
   /** Newest first, at most three; each leaves after NOTICE_MS. */
   notices: [] as (Notice & { key: number })[],
   /** The overlay editor is open (widgets show examples). */
@@ -20,6 +23,7 @@ export const live = reactive({
 
 let started = false;
 let relicTimer: ReturnType<typeof setTimeout> | undefined;
+let rivenTimer: ReturnType<typeof setTimeout> | undefined;
 
 async function refreshSession() {
   const since = live.session.start;
@@ -79,6 +83,13 @@ export function startLive() {
   api.on<WorldState>("worldstate", (w) => (live.world = w));
   api.on<RewardHit[]>("rewards", (h) => { live.rewards = h; live.showRewards = true; });
   api.on("rewards-done", () => (live.showRewards = false));
+  api.on<RivenScan>("riven", (r) => {
+    live.riven = r;
+    live.showRiven = true;
+    clearTimeout(rivenTimer);
+    rivenTimer = setTimeout(() => (live.showRiven = false), 120000);
+  });
+  api.on("riven-done", () => (live.showRiven = false));
   api.on<GameEvent>("game-event", onGame);
   api.on<Notice>("notice", onNotice);
   refreshSession();

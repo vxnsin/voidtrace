@@ -21,6 +21,7 @@ pub mod ocr;
 pub mod profile;
 pub mod relic;
 pub mod riven;
+pub mod riven_ocr;
 pub mod worldstate;
 pub mod ws;
 

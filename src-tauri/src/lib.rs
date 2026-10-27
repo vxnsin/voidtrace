@@ -306,6 +306,7 @@ pub fn run() {
             commands::mastery_routes,
             commands::riven_weapons,
             commands::riven_search,
+            commands::riven_scan,
             commands::riven_snipes,
             commands::set_riven_snipes,
             commands::dashboard_start,

@@ -42,6 +42,9 @@ pub fn set_edit(app: &AppHandle, on: bool) {
         if on {
             show(app);
             let _ = w.set_focus();
+        } else {
+            // The editor had the focus; give it back so the focus watcher sees the game in front.
+            wfc_core::memory::focus_game();
         }
     }
     let _ = app.emit("overlay-edit", on);
@@ -57,6 +60,7 @@ pub fn set_hud_hidden(app: &AppHandle, hidden: bool) {
 pub const HOTKEYS: &[(&str, &str, &str)] = &[
     ("edit", "overlay_hotkey", "CommandOrControl+Shift+W"),
     ("hud", "overlay_hud_hotkey", "CommandOrControl+Shift+H"),
+    ("riven", "overlay_riven_hotkey", "CommandOrControl+Shift+R"),
 ];
 
 /// (Re)bind the hotkey of one action ("edit" or "hud"), e.g. "CommandOrControl+Shift+W".
@@ -80,6 +84,10 @@ pub fn register_hotkey(app: &AppHandle, action: &str, key: &str) -> anyhow::Resu
             "edit" => {
                 let on = !*st.overlay_edit.read();
                 set_edit(app, on);
+            }
+            "riven" => {
+                let app = app.clone();
+                tauri::async_runtime::spawn(async move { crate::commands::riven_scan_now(&app).await });
             }
             _ => {
                 let hidden = !*st.hud_hidden.read();

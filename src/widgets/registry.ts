@@ -8,8 +8,9 @@ import SessionWidget from "./SessionWidget.vue";
 import BaroWidget from "./BaroWidget.vue";
 import NoticesWidget from "./NoticesWidget.vue";
 import RelicPicksWidget from "./RelicPicksWidget.vue";
+import RivenWidget from "./RivenWidget.vue";
 
-export type WidgetId = "cycles" | "fissures" | "rewards" | "session" | "baro" | "notices" | "relics";
+export type WidgetId = "cycles" | "fissures" | "rewards" | "session" | "baro" | "notices" | "relics" | "riven";
 export type FissureFilter = { tiers: string[]; missions: string[]; steelPath: "all" | "only" | "hide"; storms: boolean };
 
 /** One widget's settings, stored as JSON under the `widgets` setting.
@@ -32,7 +33,7 @@ export type WidgetCfg = {
   relicSort?: "plat" | "ducats";
 };
 
-export const CATEGORIES = ["World", "Relics", "You"] as const;
+export const CATEGORIES = ["World", "Relics", "Rivens", "You"] as const;
 
 export const WIDGETS: { id: WidgetId; cat: (typeof CATEGORIES)[number]; name: string; desc: string; c: Component }[] = [
   { id: "cycles", cat: "World", name: "World cycles", desc: "Cetus · Vallis · Cambion · Zariman · Duviri · Earth", c: CyclesWidget },
@@ -40,6 +41,7 @@ export const WIDGETS: { id: WidgetId; cat: (typeof CATEGORIES)[number]; name: st
   { id: "baro", cat: "World", name: "Baro Ki'Teer", desc: "Countdown, relay and his offer with plat values", c: BaroWidget },
   { id: "rewards", cat: "Relics", name: "Relic rewards", desc: "Plat and ducats per card; shows itself on the reward screen", c: RewardsWidget },
   { id: "relics", cat: "Relics", name: "Relic picks", desc: "Your best relics on the relic selection screen", c: RelicPicksWidget },
+  { id: "riven", cat: "Rivens", name: "Riven", desc: "Grades, similar listings and suggested rolls for the riven on screen (hotkey)", c: RivenWidget },
   { id: "session", cat: "You", name: "Session", desc: "Plat, ducats, relics and trades since the game started", c: SessionWidget },
   { id: "notices", cat: "You", name: "Notifications", desc: "Cycles, fissures, undercuts, Baro, trades: a line when it happens", c: NoticesWidget },
 ];
@@ -53,6 +55,7 @@ const DEFAULTS: WidgetCfg[] = [
   { id: "baro", pinned: false, dashboard: true, anchor: 7, x: 0, y: 6, scale: 1, opacity: 0.88, size: "compact", show: "orbiter" },
   { id: "notices", pinned: true, dashboard: false, anchor: 1, x: 0, y: 1.5, scale: 1, opacity: 0.92, size: "full", show: "always" },
   { id: "relics", pinned: false, dashboard: false, anchor: 5, x: 1.5, y: 0, scale: 1, opacity: 0.92, size: "full", show: "always", relicSort: "plat" },
+  { id: "riven", pinned: true, dashboard: false, anchor: 3, x: 1.5, y: 0, scale: 1, opacity: 0.92, size: "full", show: "always" },
 ];
 
 export async function loadWidgets(): Promise<WidgetCfg[]> {

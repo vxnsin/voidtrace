@@ -439,3 +439,42 @@ mod tests {
         serde_json::from_slice::<serde_json::Value>(&got).unwrap();
     }
 }
+
+/// Bring the game's main window to the front (after the overlay editor, which
+/// had to take focus, closes). Returns whether a window was found.
+#[cfg(windows)]
+pub fn focus_game() -> bool {
+    use windows::Win32::Foundation::{BOOL, HWND, LPARAM};
+    use windows::Win32::UI::WindowsAndMessaging::{
+        EnumWindows, GetWindowThreadProcessId, IsWindowVisible, SetForegroundWindow, ShowWindow, SW_RESTORE,
+    };
+    let Some(pid) = find_pid() else { return false };
+    struct Ctx {
+        pid: u32,
+        hwnd: Option<HWND>,
+    }
+    unsafe extern "system" fn cb(h: HWND, l: LPARAM) -> BOOL {
+        let ctx = &mut *(l.0 as *mut Ctx);
+        let mut p = 0u32;
+        GetWindowThreadProcessId(h, Some(&mut p as *mut u32));
+        if p == ctx.pid && IsWindowVisible(h).as_bool() {
+            ctx.hwnd = Some(h);
+            return BOOL(0);
+        }
+        BOOL(1)
+    }
+    let mut ctx = Ctx { pid, hwnd: None };
+    unsafe {
+        let _ = EnumWindows(Some(cb), LPARAM(&mut ctx as *mut Ctx as isize));
+        if let Some(h) = ctx.hwnd {
+            let _ = ShowWindow(h, SW_RESTORE);
+            return SetForegroundWindow(h).as_bool();
+        }
+    }
+    false
+}
+
+#[cfg(not(windows))]
+pub fn focus_game() -> bool {
+    false
+}
