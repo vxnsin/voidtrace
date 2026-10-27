@@ -65,7 +65,7 @@ onMounted(load);
     <div class="row">
       <span class="muted">Intro sequence:</span>
       <div class="modes">
-        <button :class="{ on: introMode === 'full' }" @click="setIntro('full')">Full 8s</button>
+        <button :class="{ on: introMode === 'full' }" @click="setIntro('full')">Full 5s</button>
         <button :class="{ on: introMode === 'quick' }" @click="setIntro('quick')">Quick 2s</button>
         <button :class="{ on: introMode === 'off' }" @click="setIntro('off')">Off</button>
       </div>

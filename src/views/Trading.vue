@@ -77,16 +77,17 @@ const chart = computed(() => {
     const i = Math.floor(r.ts / 86400) - day0;
     if (i >= 0 && i < days) (r.kind === "sell" ? s : b)[i] += r.total;
   }
-  const W = 600, H = 150, bw = W / days, max = Math.max(1, ...s, ...b) * 1.15;
-  const bars = s.map((v, i) => ({ x: i * bw, w: bw, s: (v / max) * H, b: (b[i] / max) * H }));
+  const max = Math.max(1, ...s, ...b);
+  const bars = s.map((v, i) => ({ s: (v / max) * 100, b: (b[i] / max) * 100, tip: `${label(i)} · sold ${v}p · bought ${b[i]}p` }));
+  // In-game plat as a line, only once there are values from two different days.
   const pts = points.value.filter((p) => p.ts >= day0 * 86400);
   let line = "";
-  if (pts.length >= 2) {
-    const lo = Math.min(...pts.map((p) => p.platinum)), hi = Math.max(...pts.map((p) => p.platinum)) || 1;
-    line = pts.map((p) => `${((p.ts / 86400 - day0) / days) * W},${6 + (1 - (p.platinum - lo) / Math.max(1, hi - lo)) * (H - 20)}`).join(" ");
+  if (new Set(pts.map((p) => Math.floor(p.ts / 86400))).size >= 2) {
+    const lo = Math.min(...pts.map((p) => p.platinum)), hi = Math.max(...pts.map((p) => p.platinum));
+    line = pts.map((p) => `${((p.ts / 86400 - day0) / days) * 100},${100 - ((p.platinum - lo) / Math.max(1, hi - lo)) * 90 - 5}`).join(" ");
   }
-  const label = (i: number) => new Date((day0 + i) * 86400000).toLocaleDateString(undefined, { day: "2-digit", month: "short" });
-  return { W, H, bars, line, labels: [label(0), label(Math.floor(days / 2)), label(days - 1)], empty: !inRange.value.length };
+  function label(i: number) { return new Date((day0 + i) * 86400000).toLocaleDateString("en-GB", { day: "2-digit", month: "short" }); }
+  return { bars, line, max, labels: [label(0), label(Math.floor(days / 2)), label(days - 1)], empty: !inRange.value.length };
 });
 
 async function addManual() {
@@ -127,15 +128,16 @@ onMounted(load);
   <div class="card">
     <p v-if="chart.empty" class="muted" style="margin:0">No trades in this range yet.</p>
     <template v-else>
-      <svg :viewBox="`0 0 ${chart.W} ${chart.H + 16}`" preserveAspectRatio="none" style="width:100%;height:170px;display:block">
-        <line v-for="i in 4" :key="i" x1="0" :x2="chart.W" :y1="(chart.H * (i - 1)) / 3" :y2="(chart.H * (i - 1)) / 3" stroke="var(--border)" />
-        <template v-for="(b, i) in chart.bars" :key="i">
-          <rect :x="b.x + b.w * 0.1" :y="chart.H - b.s" :width="b.w * 0.4" :height="b.s" fill="var(--accent2)" opacity=".85" />
-          <rect :x="b.x + b.w * 0.5" :y="chart.H - b.b" :width="b.w * 0.4" :height="b.b" fill="var(--muted)" />
-        </template>
-        <polyline v-if="chart.line" :points="chart.line" fill="none" stroke="var(--accent)" stroke-width="2" />
-        <text v-for="(l, i) in chart.labels" :key="l + i" :x="i === 0 ? 0 : i === 1 ? chart.W / 2 - 20 : chart.W - 46" :y="chart.H + 13" fill="var(--muted)" font-size="10">{{ l }}</text>
-      </svg>
+      <div class="plot">
+        <span class="ymax muted">{{ chart.max }}p</span>
+        <div class="cols">
+          <div v-for="(b, i) in chart.bars" :key="i" class="col" :title="b.tip">
+            <i class="s" :style="{ height: b.s + '%' }"></i><i class="b" :style="{ height: b.b + '%' }"></i>
+          </div>
+        </div>
+        <svg v-if="chart.line" class="line" viewBox="0 0 100 100" preserveAspectRatio="none"><polyline :points="chart.line" fill="none" stroke="var(--accent)" stroke-width="2" vector-effect="non-scaling-stroke" /></svg>
+      </div>
+      <div class="xl muted"><span v-for="(l, i) in chart.labels" :key="l + i">{{ l }}</span></div>
       <div class="row muted" style="gap:16px;margin-top:6px;font-size:11px">
         <span><i class="sw" style="background:var(--accent2)"></i>sold</span><span><i class="sw" style="background:var(--muted)"></i>bought</span>
         <span v-if="chart.line"><i class="sw" style="background:var(--accent);height:2px"></i>plat in game</span>
@@ -195,6 +197,15 @@ onMounted(load);
 .best .bar { grid-column: 1 / -1; height: 3px; }
 .best .bar i { display: block; height: 100%; background: var(--accent2); }
 .sw { display: inline-block; width: 10px; height: 10px; margin-right: 6px; vertical-align: middle; }
+.plot { position: relative; height: 160px; border-bottom: 1px solid var(--border); background-image: linear-gradient(var(--border) 1px, transparent 1px); background-size: 100% 33.333%; }
+.ymax { position: absolute; top: -2px; left: 0; font-size: 10px; }
+.cols { position: absolute; inset: 14px 0 0 0; display: flex; align-items: flex-end; gap: 2px; }
+.col { flex: 1 1 0; height: 100%; display: flex; align-items: flex-end; justify-content: center; gap: 1px; min-width: 0; }
+.col i { display: block; width: 40%; max-width: 12px; }
+.col .s { background: var(--accent2); opacity: .85; } .col .b { background: var(--muted); }
+.col:hover { background: rgba(255, 255, 255, .03); }
+.line { position: absolute; inset: 14px 0 0 0; width: 100%; height: calc(100% - 14px); pointer-events: none; }
+.xl { display: flex; justify-content: space-between; font-size: 10px; margin-top: 4px; }
 .tag.sold { color: var(--ok); border-color: #2f4a34; }
 .stat.ok { color: var(--ok); } .stat.error { color: var(--accent); }
 </style>

@@ -28,12 +28,14 @@ export type WidgetCfg = {
   filter?: FissureFilter;
 };
 
-export const WIDGETS: { id: WidgetId; name: string; desc: string; c: Component }[] = [
-  { id: "cycles", name: "World cycles", desc: "Cetus · Vallis · Cambion · Zariman · Duviri · Earth", c: CyclesWidget },
-  { id: "fissures", name: "Fissures", desc: "Active void fissures, filtered your way", c: FissuresWidget },
-  { id: "rewards", name: "Relic rewards", desc: "Plat and ducats per card; shows itself on the reward screen", c: RewardsWidget },
-  { id: "session", name: "Session", desc: "Plat, ducats, relics and trades since the game started", c: SessionWidget },
-  { id: "baro", name: "Baro Ki'Teer", desc: "Countdown, relay and his offer with plat values", c: BaroWidget },
+export const CATEGORIES = ["World", "Relics", "You"] as const;
+
+export const WIDGETS: { id: WidgetId; cat: (typeof CATEGORIES)[number]; name: string; desc: string; c: Component }[] = [
+  { id: "cycles", cat: "World", name: "World cycles", desc: "Cetus · Vallis · Cambion · Zariman · Duviri · Earth", c: CyclesWidget },
+  { id: "fissures", cat: "World", name: "Fissures", desc: "Active void fissures, filtered your way", c: FissuresWidget },
+  { id: "baro", cat: "World", name: "Baro Ki'Teer", desc: "Countdown, relay and his offer with plat values", c: BaroWidget },
+  { id: "rewards", cat: "Relics", name: "Relic rewards", desc: "Plat and ducats per card; shows itself on the reward screen", c: RewardsWidget },
+  { id: "session", cat: "You", name: "Session", desc: "Plat, ducats, relics and trades since the game started", c: SessionWidget },
 ];
 
 const DEFAULTS: WidgetCfg[] = [

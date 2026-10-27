@@ -114,7 +114,7 @@ open `www.warframe.com/api/user-data` and copy `user_id`. Don't spam it — DE r
 **Reward crop** sets where the OCR looks, in fractions of the screen; *Test OCR now* and
 *Preview overlay* help tune it for non-16:9 screens.
 
-**Intro** runs Full (8 s), Quick (2 s) or Off; Esc skips it.
+**Intro** runs Full (5 s), Quick (2 s) or Off; Esc skips it.
 
 </details>
 
