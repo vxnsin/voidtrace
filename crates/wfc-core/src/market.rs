@@ -28,6 +28,9 @@ pub struct MarketItem {
     pub tradable: bool,
     #[serde(default)]
     pub tags: Vec<String>,
+    /// Prime parts and relics out of the drop tables (warframe.market flag).
+    #[serde(default)]
+    pub vaulted: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -67,6 +70,22 @@ pub struct PriceSummary {
     /// Highest visible buy order.
     pub buy: Option<u32>,
     pub sell_count: usize,
+    #[serde(default)]
+    pub vaulted: bool,
+}
+
+/// A finished order from a user's public warframe.market statistics.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ClosedOrder {
+    pub id: String,
+    /// "sell" or "buy"
+    pub kind: String,
+    pub quantity: u32,
+    /// Per unit.
+    pub platinum: f64,
+    pub closed: String,
+    pub slug: String,
+    pub name: String,
 }
 
 /// What v2 returns when an order is closed: the sale/purchase it recorded
@@ -229,6 +248,8 @@ impl Market {
             tradable: Option<bool>,
             #[serde(default)]
             tags: Vec<String>,
+            #[serde(default)]
+            vaulted: Option<bool>,
             i18n: HashMap<String, I18n>,
         }
         #[derive(Deserialize)]
@@ -250,6 +271,7 @@ impl Market {
                     ducats: r.ducats.unwrap_or(0),
                     tradable: r.tradable.unwrap_or(true),
                     tags: r.tags,
+                    vaulted: r.vaulted.unwrap_or(false),
                 })
             })
             .collect();
@@ -353,6 +375,7 @@ impl Market {
             sell: sells.first().copied(),
             buy,
             sell_count: sells.len(),
+            vaulted: item.vaulted,
         };
         self.price_cache
             .write()
@@ -452,6 +475,36 @@ impl Market {
             .v1(reqwest::Method::POST, &format!("/im/chats/{chat_id}"), Some(json!({ "message": message })))
             .await?;
         Ok(())
+    }
+
+    /// Every closed order of a user, from the public profile statistics (v1, not in
+    /// the v2 docs; the website's statistics page uses it). No login needed.
+    pub async fn closed_orders(&self, user: &str) -> Result<Vec<ClosedOrder>> {
+        let res = self
+            .http
+            .get(format!("https://api.warframe.market/v1/profile/{}/statistics", user.to_lowercase()))
+            .header("Platform", "pc")
+            .header("Language", "en")
+            .header("User-Agent", USER_AGENT)
+            .send()
+            .await?;
+        let status = res.status();
+        let v: Value = res.json().await.with_context(|| format!("statistics {status}"))?;
+        let list = v.pointer("/payload/closed_orders").and_then(Value::as_array).context("no closed_orders in statistics")?;
+        Ok(list
+            .iter()
+            .filter_map(|o| {
+                Some(ClosedOrder {
+                    id: o["id"].as_str()?.to_string(),
+                    kind: o["order_type"].as_str()?.to_string(),
+                    quantity: o["quantity"].as_u64().unwrap_or(1) as u32,
+                    platinum: o["platinum"].as_f64().unwrap_or(0.0),
+                    closed: o["closed_date"].as_str().unwrap_or("").to_string(),
+                    slug: o.pointer("/item/url_name")?.as_str()?.to_string(),
+                    name: o.pointer("/item/en/item_name").and_then(Value::as_str).unwrap_or("").to_string(),
+                })
+            })
+            .collect())
     }
 
     pub async fn my_orders(&self) -> Result<Vec<Order>> {

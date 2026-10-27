@@ -11,7 +11,7 @@ import Inventory from "./views/Inventory.vue";
 import Mastery from "./views/Mastery.vue";
 import RelicPlanner from "./views/RelicPlanner.vue";
 import Rivens from "./views/Rivens.vue";
-import Stats from "./views/Stats.vue";
+import Trading from "./views/Trading.vue";
 import Market from "./views/Market.vue";
 import Chat from "./views/Chat.vue";
 import Settings from "./views/Settings.vue";
@@ -22,7 +22,7 @@ const tabs = [
   { id: "mastery", label: "Mastery", c: Mastery },
   { id: "relics", label: "Relic Planner", c: RelicPlanner },
   { id: "rivens", label: "Riven Explorer", c: Rivens },
-  { id: "stats", label: "Stats / Trading", c: Stats },
+  { id: "trading", label: "Trading", c: Trading },
   { id: "market", label: "Warframe.Market", c: Market },
   { id: "chat", label: "WFM Chat", c: Chat },
   { id: "settings", label: "Settings", c: Settings },

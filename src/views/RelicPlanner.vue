@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
-import { api, type RelicHit, type RelicPlan } from "../api";
+import { api, fmtTs, type RelicHit, type RelicPlan, type RelicRun } from "../api";
 import ItemIcon from "../components/ItemIcon.vue";
 
 const REF = ["Intact", "Exceptional", "Flawless", "Radiant"];
@@ -11,6 +11,7 @@ const pick = ref("");
 const plan = ref<RelicPlan | null>(null);
 const err = ref("");
 const busy = ref(false);
+const runs = ref<RelicRun[]>([]);
 
 async function findRelics() {
   err.value = "";
@@ -21,7 +22,10 @@ async function loadPlan(r = pick.value) {
   pick.value = r; busy.value = true; err.value = "";
   try { plan.value = await api.relicPlan(r); } catch (e) { err.value = String(e); } finally { busy.value = false; }
 }
-onMounted(async () => { try { relics.value = await api.relicList(); } catch (e) { err.value = String(e); } });
+onMounted(async () => {
+  try { relics.value = await api.relicList(); } catch (e) { err.value = String(e); }
+  runs.value = await api.relicRuns(15).catch(() => []);
+});
 </script>
 
 <template>
@@ -38,7 +42,7 @@ onMounted(async () => { try { relics.value = await api.relicList(); } catch (e) 
         <thead><tr><th>Relic</th><th>Rarity</th><th v-for="r in REF" :key="r">{{ r.slice(0, 3) }}</th></tr></thead>
         <tbody>
           <tr v-for="h in hits" :key="h.relic" style="cursor:pointer" @click="loadPlan(h.relic)">
-            <td>{{ h.relic }}</td><td><span class="tag" :class="h.rarity.toLowerCase()">{{ h.rarity }}</span></td>
+            <td>{{ h.relic }} <span v-if="h.vaulted" class="tag vaulted">vaulted</span></td><td><span class="tag" :class="h.rarity.toLowerCase()">{{ h.rarity }}</span></td>
             <td v-for="(c, i) in h.chance" :key="i">{{ c.toFixed(1) }}%</td>
           </tr>
         </tbody>
@@ -63,7 +67,7 @@ onMounted(async () => { try { relics.value = await api.relicList(); } catch (e) 
           <thead><tr><th>Drop</th><th>Rarity</th><th>Rad %</th><th>Plat</th><th>Ducats</th></tr></thead>
           <tbody>
             <tr v-for="d in plan.drops" :key="d.item">
-              <td><span class="row" style="gap:10px;flex-wrap:nowrap"><ItemIcon :slug="d.slug" /><span>{{ d.item }}</span></span></td><td><span class="tag" :class="d.rarity.toLowerCase()">{{ d.rarity }}</span></td>
+              <td><span class="row" style="gap:10px;flex-wrap:nowrap"><ItemIcon :slug="d.slug" /><span>{{ d.item }}</span><span v-if="d.vaulted" class="tag vaulted">vaulted</span></span></td><td><span class="tag" :class="d.rarity.toLowerCase()">{{ d.rarity }}</span></td>
               <td>{{ d.chance[3].toFixed(1) }}%</td><td class="plat">{{ d.plat ?? "–" }}</td><td class="ducat">{{ d.ducats || "–" }}</td>
             </tr>
           </tbody>
@@ -71,4 +75,13 @@ onMounted(async () => { try { relics.value = await api.relicList(); } catch (e) 
       </template>
     </div>
   </div>
+
+  <h2>Recent relic runs</h2>
+  <table v-if="runs.length">
+    <thead><tr><th>When</th><th>Relic</th><th>Rewards seen</th></tr></thead>
+    <tbody>
+      <tr v-for="r in runs" :key="r.id" style="cursor:pointer" @click="r.relic && loadPlan(r.relic)"><td class="muted">{{ fmtTs(r.ts) }}</td><td>{{ r.relic || "?" }}</td><td>{{ r.rewards.join(" · ") }}</td></tr>
+    </tbody>
+  </table>
+  <p v-else class="muted">Runs show up here after the first relic reward screen.</p>
 </template>

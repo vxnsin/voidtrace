@@ -193,6 +193,7 @@ pub fn run() {
             commands::wfm_login,
             commands::wfm_logout,
             commands::wfm_my_orders,
+            commands::wfm_closed_orders,
             commands::wfm_create_order,
             commands::wfm_update_order,
             commands::wfm_delete_order,

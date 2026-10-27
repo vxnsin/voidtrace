@@ -18,7 +18,7 @@ onMounted(() => {
     <div v-for="h in hits" :key="h.raw" class="ov-card" :class="{ best: h.best }">
       <ItemIcon :slug="h.price?.slug" :size="48" class="pic" />
       <div class="txt">
-        <div class="head">{{ h.best ? ">" : "·" }} {{ h.price?.name ?? h.raw }}</div>
+        <div class="head">{{ h.best ? ">" : "·" }} {{ h.price?.name ?? h.raw }}<span v-if="h.price?.vaulted" class="vault">vaulted</span></div>
         <div class="nums">
           <span class="p">{{ h.price?.sell ?? "??" }}p</span>
           <span class="d">{{ h.price?.ducats ?? "??" }}d</span>
@@ -43,4 +43,5 @@ onMounted(() => {
 .nums { display: flex; justify-content: space-between; font-size: 18px; }
 .p { color: #e8e8e8; } .d { color: #b89a5a; }
 .sub { color: #4e4e52; font-size: 10px; margin-top: 4px; }
+.vault { margin-left: 8px; padding: 0 5px; border: 1px solid #4a3f28; color: #b89a5a; font-size: 9px; letter-spacing: .08em; }
 </style>

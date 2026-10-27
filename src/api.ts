@@ -10,13 +10,14 @@ export type Status = {
   ee_log: string;
   ee_log_exists: boolean;
 };
-export type MarketItem = { id: string; slug: string; name: string; icon: string; ducats: number; tradable: boolean; tags: string[] };
-export type PriceSummary = { slug: string; name: string; ducats: number; sell: number | null; buy: number | null; sell_count: number };
+export type MarketItem = { id: string; slug: string; name: string; icon: string; ducats: number; tradable: boolean; tags: string[]; vaulted: boolean };
+export type PriceSummary = { slug: string; name: string; ducats: number; sell: number | null; buy: number | null; sell_count: number; vaulted: boolean };
+export type ClosedOrder = { id: string; kind: "buy" | "sell"; quantity: number; platinum: number; closed: string; slug: string; name: string };
 export type Order = { id: string; type: "buy" | "sell"; platinum: number; quantity: number; visible: boolean; itemId: string; rank?: number; user?: { ingameName: string; status: string; reputation: number } };
 export type MasteryItem = { unique_name: string; name: string; category: string; xp: number; max_xp: number; mastered: boolean; owned: boolean; mastery_points: number; image: string | null };
 export type MasterySummary = { items: MasteryItem[]; mastered: number; total: number; points: number; points_available: number; rank: number };
-export type RelicHit = { relic: string; rarity: string; chance: [number, number, number, number] };
-export type DropInfo = { item: string; rarity: string; chance: [number, number, number, number]; plat: number | null; ducats: number; slug: string | null };
+export type RelicHit = { relic: string; rarity: string; chance: [number, number, number, number]; vaulted: boolean };
+export type DropInfo = { item: string; rarity: string; chance: [number, number, number, number]; plat: number | null; ducats: number; slug: string | null; vaulted: boolean };
 export type RelicPlan = { relic: string; drops: DropInfo[]; expected_plat: number[]; expected_ducats: number[] };
 export type InvRow = { slug: string; name: string; quantity: number };
 export type StatInput = { stat: string; value: number; negative: boolean };
@@ -67,6 +68,7 @@ export const api = {
   wfmLogin: (email: string, password: string) => invoke<string>("wfm_login", { email, password }),
   wfmLogout: () => invoke<void>("wfm_logout"),
   wfmMyOrders: () => invoke<Order[]>("wfm_my_orders"),
+  wfmClosedOrders: () => invoke<ClosedOrder[]>("wfm_closed_orders"),
   wfmCreateOrder: (itemId: string, sell: boolean, platinum: number, quantity: number, rank?: number) =>
     invoke<Order>("wfm_create_order", { itemId, sell, platinum, quantity, rank }),
   wfmUpdateOrder: (id: string, platinum: number, quantity: number, visible: boolean) =>

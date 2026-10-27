@@ -80,6 +80,7 @@ tr:hover td { background: var(--bg3); }
 .ducat { color: var(--warn); }
 .tag { font-size: 10px; padding: 1px 6px; border: 1px solid var(--dim); color: var(--muted); letter-spacing: .08em; text-transform: uppercase; }
 .tag.common { color: var(--fg2); } .tag.uncommon { color: var(--accent2); } .tag.rare { color: var(--accent); border-color: var(--accent); }
+.tag.vaulted { color: var(--warn); border-color: #4a3f28; margin-left: 8px; }
 .bar { height: 4px; background: var(--dim); overflow: hidden; }
 .bar > i { display: block; height: 100%; background: var(--fg2); }
 .error { color: var(--bad); }

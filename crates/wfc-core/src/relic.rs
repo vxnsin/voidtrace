@@ -22,6 +22,8 @@ pub struct DropInfo {
     pub plat: Option<u32>,
     pub ducats: u32,
     pub slug: Option<String>,
+    #[serde(default)]
+    pub vaulted: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -66,14 +68,14 @@ pub async fn plan(ex: &Export, market: &Market, relic: &ExportRelic) -> RelicPla
         if !seen.insert(name.clone()) {
             continue;
         }
-        let (plat, ducats, slug) = match market.find_item(&name) {
+        let (plat, ducats, slug, vaulted) = match market.find_item(&name) {
             Some(mi) => {
                 let p = market.price(&mi.slug).await.ok();
-                (p.as_ref().and_then(|p| p.sell), mi.ducats, Some(mi.slug))
+                (p.as_ref().and_then(|p| p.sell), mi.ducats, Some(mi.slug), mi.vaulted)
             }
-            None => (None, 0, None),
+            None => (None, 0, None, false),
         };
-        drops.push(DropInfo { item: name, rarity: r.rarity.clone(), chance: chance_for(&r.rarity), plat, ducats, slug });
+        drops.push(DropInfo { item: name, rarity: r.rarity.clone(), chance: chance_for(&r.rarity), plat, ducats, slug, vaulted });
     }
     let mut expected_plat = [0f32; 4];
     let mut expected_ducats = [0f32; 4];
