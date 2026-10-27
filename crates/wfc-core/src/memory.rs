@@ -389,6 +389,30 @@ pub fn foreground_pid() -> Option<u32> {
     }
 }
 
+/// Show the overlay without taking the foreground from the game, and keep it
+/// from being activated by clicks (`no_activate`; off in edit mode).
+#[cfg(windows)]
+pub fn overlay_window(hwnd: isize, show: bool, no_activate: bool) {
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GetWindowLongPtrW, SetWindowLongPtrW, SetWindowPos, ShowWindow, GWL_EXSTYLE, HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE,
+        SWP_NOSIZE, SW_SHOWNOACTIVATE, WS_EX_NOACTIVATE,
+    };
+    unsafe {
+        let h = HWND(hwnd as *mut core::ffi::c_void);
+        let ex = GetWindowLongPtrW(h, GWL_EXSTYLE);
+        let flag = WS_EX_NOACTIVATE.0 as isize;
+        SetWindowLongPtrW(h, GWL_EXSTYLE, if no_activate { ex | flag } else { ex & !flag });
+        if show {
+            let _ = ShowWindow(h, SW_SHOWNOACTIVATE);
+            let _ = SetWindowPos(h, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+        }
+    }
+}
+
+#[cfg(not(windows))]
+pub fn overlay_window(_hwnd: isize, _show: bool, _no_activate: bool) {}
+
 #[cfg(not(windows))]
 pub fn foreground_pid() -> Option<u32> {
     None
