@@ -11,6 +11,9 @@ const BASE: &str = "https://api.warframe.market/v2";
 // v2 /auth/signin is first-party only (Firebase App Check); third-party
 // clients keep using the v1 login and send its JWT to v2 endpoints.
 const V1_SIGNIN: &str = "https://api.warframe.market/v1/auth/signin";
+/// warframe.market asks every client for a descriptive User-Agent with a way to
+/// reach the author (docs.warframe.market, Rules).
+pub const USER_AGENT: &str = concat!("VoidTrace/", env!("CARGO_PKG_VERSION"), " (+https://github.com/vxnsin/voidtrace)");
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MarketItem {
@@ -64,6 +67,23 @@ pub struct PriceSummary {
     /// Highest visible buy order.
     pub buy: Option<u32>,
     pub sell_count: usize,
+}
+
+/// What v2 returns when an order is closed: the sale/purchase it recorded
+/// (docs.warframe.market, data model "Transaction"; no itemId, only the order).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Transaction {
+    pub id: String,
+    #[serde(default, rename = "type")]
+    pub kind: String,
+    #[serde(default, rename = "originId")]
+    pub origin_id: String,
+    #[serde(default)]
+    pub platinum: f64,
+    #[serde(default)]
+    pub quantity: u32,
+    #[serde(default, rename = "createdAt")]
+    pub created_at: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -148,7 +168,7 @@ impl Market {
             .header("Platform", "pc")
             .header("Language", "en")
             .header("Crossplay", "true")
-            .header("User-Agent", "VoidTrace/0.1");
+            .header("User-Agent", USER_AGENT);
         if let Some(t) = self.token.read().as_ref() {
             r = r.header("Authorization", format!("{} {t}", self.scheme.read()));
         }
@@ -349,7 +369,7 @@ impl Market {
             .header("Authorization", "JWT ")
             .header("Platform", "pc")
             .header("Language", "en")
-            .header("User-Agent", "VoidTrace/0.1")
+            .header("User-Agent", USER_AGENT)
             .json(&serde_json::json!({
                 "email": email, "password": password, "auth_type": "header"
             }))
@@ -395,7 +415,7 @@ impl Market {
             .header("Authorization", format!("JWT {token}"))
             .header("Platform", "pc")
             .header("Language", "en")
-            .header("User-Agent", "VoidTrace/0.1");
+            .header("User-Agent", USER_AGENT);
         if let Some(b) = body {
             r = r.json(&b);
         }
@@ -468,11 +488,38 @@ impl Market {
         .await
     }
 
+    /// Mark `quantity` of an order as traded. The server records a transaction,
+    /// lowers the order's quantity and removes the order once it reaches zero.
+    pub async fn close_order(&self, id: &str, quantity: u32) -> Result<Transaction> {
+        self.authed(
+            reqwest::Method::POST,
+            &format!("/order/{id}/close"),
+            Some(serde_json::json!({ "quantity": quantity })),
+        )
+        .await
+    }
+
     pub async fn delete_order(&self, id: &str) -> Result<()> {
         let _: serde_json::Value = self
             .authed(reqwest::Method::DELETE, &format!("/order/{id}"), None)
             .await
             .or_else(|e| if e.to_string().contains("empty data") { Ok(serde_json::Value::Null) } else { Err(e) })?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_close_order_response() {
+        // Shape from docs.warframe.market (Close Order -> compact Transaction).
+        let body = r#"{"apiVersion":"0.22.0","data":{"id":"tx1","type":"sell","originId":"ord1","platinum":15,
+            "quantity":2,"createdAt":"2026-10-27T08:00:00Z","updatedAt":"2026-10-27T08:00:00Z"},"error":null}"#;
+        let env: Envelope<Transaction> = serde_json::from_str(body).unwrap();
+        let tx = env.data.unwrap();
+        assert_eq!((tx.kind.as_str(), tx.origin_id.as_str(), tx.quantity), ("sell", "ord1", 2));
+        assert_eq!(tx.platinum, 15.0);
     }
 }

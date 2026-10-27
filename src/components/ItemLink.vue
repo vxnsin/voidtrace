@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref } from "vue";
 import { api, type MarketItem, type PriceSummary } from "../api";
+import ItemIcon from "./ItemIcon.vue";
 
 const props = defineProps<{ slug: string; name: string; icon?: string; ducats?: number }>();
 const hover = ref(false);
@@ -21,7 +22,8 @@ const icon = () => props.icon ?? item.value?.icon;
 
 <template>
   <span class="il" @mouseenter="enter" @mouseleave="leave">
-    <a href="#" @click.prevent="api.openUrl(api.itemUrl(slug))" :title="'open on warframe.market'">{{ name }}</a>
+    <ItemIcon :slug="slug" :icon="icon()" :size="24" />
+    <a href="#" @click.prevent="api.openUrl(api.itemUrl(slug))">{{ name }}</a>
     <span class="card" v-if="hover">
       <img v-if="icon()" :src="api.iconUrl(icon()!)" width="64" height="64" />
       <span class="body">
@@ -36,7 +38,7 @@ const icon = () => props.icon ?? item.value?.icon;
 </template>
 
 <style scoped>
-.il { position: relative; }
+.il { position: relative; display: inline-flex; align-items: center; gap: 10px; }
 a { color: inherit; text-decoration: none; border-bottom: 1px dotted var(--dim); }
 a:hover { color: var(--accent2); border-bottom-color: var(--accent); }
 .card { position: absolute; left: 0; top: 100%; z-index: 20; display: flex; gap: 10px; padding: 10px; background: var(--bg2); border: 1px solid var(--dim); min-width: 280px; pointer-events: none; }

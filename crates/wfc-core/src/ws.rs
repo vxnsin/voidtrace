@@ -99,7 +99,7 @@ impl Socket {
 async fn run(token: &str, rx: &mut mpsc::Receiver<Command>, ev: &broadcast::Sender<WsEvent>) -> Result<()> {
     let mut req = URL.into_client_request()?;
     req.headers_mut().insert("Sec-WebSocket-Protocol", "wfm".parse()?);
-    req.headers_mut().insert("User-Agent", "VoidTrace/0.1".parse()?);
+    req.headers_mut().insert("User-Agent", crate::market::USER_AGENT.parse()?);
     let (ws, _) = tokio_tungstenite::connect_async(req).await.context("connect")?;
     let (mut sink, mut stream) = ws.split();
     let _ = ev.send(WsEvent::Connected);

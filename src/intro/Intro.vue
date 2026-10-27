@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from "vue";
+import { MARK, MARK_ASPECT, MARK_W } from "./mark";
 
 const emit = defineEmits<{ done: [] }>();
 const props = defineProps<{ backendOk: boolean }>();
@@ -39,29 +40,20 @@ function hash(x: number, y: number, s = 0) {
   return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
 }
 
-// Lotus emblem: three petals rising from a common base. u = along petal, v = across.
-function petal(px: number, py: number, angle: number, len: number, width: number) {
-  const c = Math.cos(angle), s = Math.sin(angle);
-  const u = -px * s + -py * c; // rotate so the petal points "up" (negative y)
-  const v = px * c - py * s;
-  if (u < 0 || u > len) return 0;
-  const w = width * Math.sin(Math.PI * (u / len)) ** 0.7;
-  const d = Math.abs(v) / Math.max(w, 1e-3);
-  if (d > 1) return 0;
-  // Line drawing: bright outline, faint spine, mostly empty inside.
-  if (d > 0.8) return 0.85 + 0.15 * (d - 0.8) / 0.2;
-  if (Math.abs(v) < 0.55) return 0.45;
-  return hash(Math.round(px), Math.round(py), 5) > 0.82 ? 0.18 : 0;
+// Emblem: the app's VT mark, sampled from its bitmap. Box in cells: ex, ey, ew, eh.
+let ex = 0, ey = 0, ew = 1, eh = 1;
+function kind(x: number, y: number) {
+  const u = (x - ex) / ew, v = (y - ey) / eh;
+  if (u < 0 || u >= 1 || v < 0 || v >= 1) return 0;
+  return MARK[Math.floor(v * MARK.length)][Math.floor(u * MARK_W)];
 }
-
-function lotus(px: number, py: number) {
-  // px, py in cell units relative to emblem base (y up is negative)
-  const a = petal(px, py, 0, 30, 6.5);
-  const b = petal(px, py, 0.78, 24, 5);
-  const c = petal(px, py, -0.78, 24, 5);
-  const d = petal(px, py, 1.35, 15, 3.5);
-  const e = petal(px, py, -1.35, 15, 3.5);
-  return Math.max(a, b, c, d, e);
+// Outline bright, body dimmer, trace line faint.
+function mark(x: number, y: number) {
+  const k = kind(x, y);
+  if (k === 0) return { v: 0, k };
+  if (k === 3) return { v: 0.35, k };
+  const edge = kind(x - 1, y) !== k || kind(x + 1, y) !== k || kind(x, y - 1) !== k || kind(x, y + 1) !== k;
+  return { v: edge ? 1 : 0.7 + hash(x, y, 5) * 0.1, k };
 }
 
 function frame(now: number) {
@@ -74,8 +66,8 @@ function frame(now: number) {
   ctx.font = `${CH - 2}px ${getComputedStyle(document.documentElement).getPropertyValue("--mono")}`;
   ctx.textBaseline = "top";
 
-  const cx = cols / 2, cy = rows * 0.62;
-  const reveal = Math.min(1, p * 1.6);         // emblem draws in over the first ~60%
+  const cx = cols / 2, cy = ey + eh * 0.45;
+  const reveal = Math.min(1, p * 1.6);         // emblem builds up over the first ~60%
   const rays = Math.min(1, Math.max(0, (p - 0.1) / 0.7));
   const maxR = Math.hypot(cols, rows);
 
@@ -85,21 +77,22 @@ function frame(now: number) {
       const r = Math.hypot(dx, dy);
       const ang = Math.atan2(dy, dx);
 
-      // Emblem
-      let v = lotus(dx, dy);
-      let crimson = false;
+      // Emblem, built from the base upwards; the front scrambles before it settles.
+      const m = mark(x, y);
+      let v = m.v;
+      let front = false;
       if (v > 0) {
-        // reveal from the base upwards
-        const rowFrac = (cy - y) / 32;
-        if (rowFrac > reveal) v = 0;
-        crimson = r < 3.5 || (Math.abs(dx) < 0.6 && dy < -3 && dy > -14);
+        const rise = (ey + eh - y) / eh;
+        if (rise > reveal) v = 0;
+        else front = reveal < 1 && reveal - rise < 0.05;
       }
+      const crimson = m.k === 2 || front;
 
       // Radial web: 12 spokes + concentric rings, drawn outward over time
       let web = 0;
       const spoke = Math.abs(((ang / (Math.PI / 6)) % 1 + 1) % 1 - 0.5) * 2; // 0 at spoke
       const ring = Math.abs(((r / 9) % 1) - 0.5) * 2;
-      if (r / maxR < rays && r > 8) {
+      if (r / maxR < rays && m.k === 0 && r > ew * 0.62) {
         if (spoke > 0.96) web = 0.28;
         if (ring > 0.97 && hash(x, y, 3) > 0.35) web = 0.22;
       }
@@ -118,7 +111,8 @@ function frame(now: number) {
       if (v === 0 && n < 0.08) val *= 0.3; // flicker
 
       const idx = Math.min(RAMP.length - 1, Math.floor(val * (RAMP.length - 1)));
-      const ch = v > 0 && n < 0.03 ? RAMP[Math.floor(hash(x, y, 11) * RAMP.length)] : RAMP[idx];
+      const scramble = front || (v > 0 && n < 0.03);
+      const ch = scramble ? RAMP[1 + Math.floor(hash(x, y, Math.floor(t * 20)) * (RAMP.length - 1))] : RAMP[idx];
       if (ch === " ") continue;
       const g = Math.floor(40 + val * 150);
       ctx.fillStyle = crimson && v > 0 ? "#c8102e" : `rgb(${g},${g},${g + 2})`;
@@ -136,6 +130,11 @@ function resize() {
   c.height = window.innerHeight;
   cols = Math.ceil(c.width / CW);
   rows = Math.ceil(c.height / CH);
+  // Emblem: about a fifth of the width (at most 52 cells), true aspect, a bit above centre.
+  ew = Math.min(cols * 0.2, 52);
+  eh = (ew * CW) / MARK_ASPECT / CH;
+  ex = (cols - ew) / 2;
+  ey = rows * 0.44 - eh / 2;
 }
 
 onMounted(() => {
@@ -159,9 +158,9 @@ onBeforeUnmount(() => {
     <canvas ref="canvas"></canvas>
     <pre class="meta">VoidTrace/INTRO · sequence
 mode ........... {{ mode.toUpperCase() }} · decorative only
-emblem ......... lotus · procedural
+emblem ......... vt mark · ascii
 web ............ 12 spokes · radial
-marker ......... core · crimson</pre>
+marker ......... wedge · crimson</pre>
     <div class="cta" :class="{ show: finished }">
       <div class="hint">PRESS ANY KEY TO CONTINUE</div>
       <button class="btn" @click.stop="finish">Open dashboard</button>

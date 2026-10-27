@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
 import { api, type RelicHit, type RelicPlan } from "../api";
+import ItemIcon from "../components/ItemIcon.vue";
 
 const REF = ["Intact", "Exceptional", "Flawless", "Radiant"];
 const want = ref("");
@@ -62,7 +63,7 @@ onMounted(async () => { try { relics.value = await api.relicList(); } catch (e) 
           <thead><tr><th>Drop</th><th>Rarity</th><th>Rad %</th><th>Plat</th><th>Ducats</th></tr></thead>
           <tbody>
             <tr v-for="d in plan.drops" :key="d.item">
-              <td>{{ d.item }}</td><td><span class="tag" :class="d.rarity.toLowerCase()">{{ d.rarity }}</span></td>
+              <td><span class="row" style="gap:10px;flex-wrap:nowrap"><ItemIcon :slug="d.slug" /><span>{{ d.item }}</span></span></td><td><span class="tag" :class="d.rarity.toLowerCase()">{{ d.rarity }}</span></td>
               <td>{{ d.chance[3].toFixed(1) }}%</td><td class="plat">{{ d.plat ?? "–" }}</td><td class="ducat">{{ d.ducats || "–" }}</td>
             </tr>
           </tbody>

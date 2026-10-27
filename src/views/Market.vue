@@ -1,11 +1,14 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
-import { api, type MarketItem, type Order, type PriceSummary, type RichStatus, type Status, type WsEvent } from "../api";
+import { api, listingPrompt, tradePrompt, type MarketItem, type Order, type PriceSummary, type RichStatus, type Status, type WsEvent } from "../api";
 import ItemLink from "../components/ItemLink.vue";
+import ItemIcon from "../components/ItemIcon.vue";
 
 const wfmStatus = ref<RichStatus | null>(null);
 const wsState = ref("connecting");
 const autoActivity = ref(true);
+const onExit = ref("invisible");
+async function saveOnExit() { await api.setSetting("wfm_status_on_exit", onExit.value); }
 async function setStatus(s: string) {
   try { await api.wfmSetStatus(s, wfmStatus.value?.activity?.type, wfmStatus.value?.activity?.details ?? undefined); } catch (e) { err.value = String(e); }
 }
@@ -42,10 +45,13 @@ async function show(i: MarketItem) {
 async function upd(o: Order, patch: Partial<Order>) {
   try { await api.wfmUpdateOrder(o.id, patch.platinum ?? o.platinum, patch.quantity ?? o.quantity, patch.visible ?? o.visible); await loadMine(); } catch (e) { err.value = String(e); }
 }
+function traded(o: Order) { tradePrompt.value = { order: o, onDone: loadMine }; }
+function newListing(mode: "sell" | "buy") { listingPrompt.value = { mode, onDone: loadMine }; }
 async function del(o: Order) { try { await api.wfmDeleteOrder(o.id); await loadMine(); } catch (e) { err.value = String(e); } }
 onMounted(async () => {
   who.value = (await api.getSetting("wfm_name")) ?? "";
   autoActivity.value = (await api.getSetting("wfm_auto_activity")) !== "0";
+  onExit.value = (await api.getSetting("wfm_status_on_exit")) ?? "invisible";
   wfmStatus.value = await api.wfmStatus();
   if (wfmStatus.value) wsState.value = "connected";
   api.on<WsEvent>("wfm-ws", (e) => {
@@ -77,11 +83,18 @@ onMounted(async () => {
       </div>
       <span class="muted" v-if="wfmStatus?.activity">{{ wfmStatus.activity.type.toLowerCase().replace('_', ' ') }}<template v-if="wfmStatus.activity.details"> · {{ wfmStatus.activity.details }}</template></span>
       <label class="pill" :title="'Mirror login / mission state from EE.log to your market status'"><input type="checkbox" :checked="autoActivity" @change="toggleAuto" /> auto from game</label>
+      <label class="muted" v-if="autoActivity" title="Status to set when the Warframe process exits">on exit
+        <select v-model="onExit" @change="saveOnExit"><option value="invisible">invisible</option><option value="online">online</option><option value="keep">keep</option></select>
+      </label>
       <button class="btn" @click="loadMine">Reload</button><button class="btn" @click="logout">Log out</button>
     </div>
   </div>
 
   <h2>My listings</h2>
+  <div class="row" v-if="status?.wfm_logged_in" style="margin-bottom:8px">
+    <button class="btn primary" @click="newListing('sell')">+ Sell from inventory</button>
+    <button class="btn" @click="newListing('buy')">+ Buy order</button>
+  </div>
   <table v-if="mine.length">
     <thead><tr><th>Type</th><th>Item</th><th>Plat</th><th>Qty</th><th>Visible</th><th></th></tr></thead>
     <tbody>
@@ -95,7 +108,10 @@ onMounted(async () => {
         <td><input type="number" :value="o.platinum" style="width:80px" @change="upd(o, { platinum: Number(($event.target as HTMLInputElement).value) })" /></td>
         <td><input type="number" :value="o.quantity" style="width:70px" @change="upd(o, { quantity: Number(($event.target as HTMLInputElement).value) })" /></td>
         <td><input type="checkbox" :checked="o.visible" @change="upd(o, { visible: ($event.target as HTMLInputElement).checked })" /></td>
-        <td><button class="btn danger" @click="del(o)">✕</button></td>
+        <td>
+          <button class="btn" @click="traded(o)">{{ o.type === "sell" ? "sold" : "bought" }}</button>
+          <button class="btn danger" @click="del(o)">✕</button>
+        </td>
       </tr>
     </tbody>
   </table>
@@ -105,7 +121,7 @@ onMounted(async () => {
   <div class="row" style="position:relative">
     <input v-model="q" @input="search" placeholder="Item name" style="width:360px" />
     <div v-if="results.length" class="card" style="position:absolute;top:40px;left:0;z-index:5;width:360px;padding:4px">
-      <div v-for="r in results" :key="r.id" style="padding:6px 8px;cursor:pointer" @click="show(r)">{{ r.name }}</div>
+      <div v-for="r in results" :key="r.id" class="row" style="padding:6px 8px;cursor:pointer;gap:10px" @click="show(r)"><ItemIcon :icon="r.icon" /><span>{{ r.name }}</span></div>
     </div>
   </div>
   <div v-if="price" class="grid cols-4" style="margin-top:12px">

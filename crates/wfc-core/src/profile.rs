@@ -25,6 +25,17 @@ pub struct Profile {
     pub xp: Vec<XpEntry>,
 }
 
+/// Same data from the inventory document the game holds (memory sync): it
+/// carries the account's full `XPInfo`, so no account id or DE request is needed.
+pub fn from_inventory(v: &serde_json::Value, display_name: &str) -> Option<Profile> {
+    let xp: Vec<XpEntry> = serde_json::from_value(v.get("XPInfo")?.clone()).ok()?;
+    Some(Profile {
+        display_name: display_name.to_string(),
+        player_level: v.get("PlayerLevel").and_then(|l| l.as_u64()).unwrap_or(0) as u32,
+        xp,
+    })
+}
+
 pub fn valid_id(id: &str) -> bool {
     id.len() == 24 && id.chars().all(|c| c.is_ascii_hexdigit())
 }

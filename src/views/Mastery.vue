@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { api, type MasterySummary } from "../api";
+import ItemIcon from "../components/ItemIcon.vue";
 
 const playerId = ref("");
 const name = ref("");
@@ -26,16 +27,21 @@ const byCat = computed(() => {
   return Object.entries(m).sort();
 });
 
+const fromGame = ref(false);
 onMounted(async () => {
   name.value = (await api.getSetting("player_name")) ?? "";
   playerId.value = (await api.getSetting("player_id")) ?? "";
+  fromGame.value = (await api.getSetting("profile_source")) === "game";
   await load();
+  api.on("mastery-updated", () => { fromGame.value = true; load(); });
 });
 </script>
 
 <template>
   <h1>Mastery Helper <span class="muted" v-if="name">· {{ name }}</span></h1>
-  <div class="card" style="margin-bottom:16px">
+  <p class="muted" v-if="fromGame">Read from the game with each inventory sync — no account id needed.</p>
+  <p class="muted" v-else>Turn on <b>Inventory sync</b> in Settings and mastery comes straight from the game. Without it, load your profile by account id:</p>
+  <div class="card" style="margin-bottom:16px" v-if="!fromGame">
     <div class="row">
       <input v-model="playerId" placeholder="Account id (24 hex chars)" style="width:280px" @keyup.enter="load(true)" />
       <button class="btn primary" :disabled="busy || playerId.length !== 24" @click="load(true)">{{ busy ? "Loading…" : "Load profile" }}</button>
@@ -66,7 +72,7 @@ onMounted(async () => {
       <thead><tr><th>Item</th><th>Category</th><th>Progress</th><th>MR points</th></tr></thead>
       <tbody>
         <tr v-for="i in todo.slice(0, 200)" :key="i.unique_name">
-          <td>{{ i.name }}</td><td class="muted">{{ i.category }}</td>
+          <td><span class="row" style="gap:10px"><ItemIcon :src="i.image" /><span>{{ i.name }}</span></span></td><td class="muted">{{ i.category }}</td>
           <td style="min-width:140px"><div class="bar"><i :style="{ width: (i.xp / i.max_xp) * 100 + '%' }"></i></div></td>
           <td>+{{ i.max_xp >= 6000 ? 6000 : 3000 }}</td>
         </tr>

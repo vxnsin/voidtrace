@@ -182,6 +182,31 @@ pub fn market_items_by_id(st: State<AppState>, ids: Vec<String>) -> std::collect
         .collect()
 }
 
+/// Is the Warframe process up right now (setup checklist).
+#[tauri::command]
+pub fn game_running() -> bool {
+    wfc_core::memory::find_pid().is_some()
+}
+
+/// Start with Windows (hidden, `--background`) and open when Warframe starts.
+#[tauri::command]
+pub fn set_launch_with_game(app: AppHandle, st: State<AppState>, on: bool) -> R<()> {
+    use tauri_plugin_autostart::ManagerExt;
+    let al = app.autolaunch();
+    if on {
+        al.enable().map_err(err)?;
+    } else if al.is_enabled().unwrap_or(false) {
+        al.disable().map_err(err)?;
+    }
+    st.db.set("launch_with_game", if on { "1" } else { "0" }).map_err(err)
+}
+
+/// Catalogue entry for a slug (the inventory ledger stores slugs, orders need ids).
+#[tauri::command]
+pub fn market_item(st: State<AppState>, slug: String) -> Option<MarketItem> {
+    st.market.items().into_iter().find(|i| i.slug == slug)
+}
+
 #[tauri::command]
 pub async fn market_price(st: State<'_, AppState>, slug: String) -> R<PriceSummary> {
     st.market.price(&slug).await.map_err(err)
@@ -333,6 +358,49 @@ pub fn add_trade(st: State<AppState>, t: NewTrade) -> R<i64> {
         })
         .map_err(err)
 }
+#[derive(Deserialize)]
+pub struct TradeDone {
+    /// warframe.market order to close; its quantity drops by `quantity`.
+    pub order_id: Option<String>,
+    /// Inventory ledger row to adjust (sell: minus, buy: plus).
+    pub slug: Option<String>,
+    pub item: String,
+    pub quantity: u32,
+    /// Total for the whole trade, like the manual entries in the Stats tab.
+    pub platinum: i32,
+    pub direction: String,
+    pub partner: String,
+}
+
+/// A finished in-game trade: close the market order first (if any), so a
+/// failed close leaves nothing half-recorded, then log it and move the ledger.
+#[tauri::command]
+pub async fn record_trade(st: State<'_, AppState>, t: TradeDone) -> R<i64> {
+    if let Some(id) = &t.order_id {
+        st.market.close_order(id, t.quantity).await.map_err(err)?;
+    }
+    let id = st
+        .db
+        .add_trade(&Trade {
+            id: 0,
+            ts: chrono::Utc::now().timestamp(),
+            item: t.item.clone(),
+            quantity: t.quantity,
+            platinum: t.platinum,
+            direction: t.direction.clone(),
+            partner: t.partner,
+        })
+        .map_err(err)?;
+    if let Some(slug) = &t.slug {
+        let delta = if t.direction == "sell" { -(t.quantity as i32) } else { t.quantity as i32 };
+        let left = st.db.inventory_add(slug, &t.item, delta).map_err(err)?;
+        if left < 0 {
+            st.db.inventory_set(slug, &t.item, 0).map_err(err)?;
+        }
+    }
+    Ok(id)
+}
+
 #[tauri::command]
 pub fn delete_trade(st: State<AppState>, id: i64) -> R<()> {
     st.db.delete_trade(id).map_err(err)

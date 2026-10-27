@@ -22,6 +22,11 @@ pub enum GameEvent {
     RewardDone,
     TradeComplete,
     RelicOpened { relic: String },
+    /// The Warframe process appeared (process watcher).
+    GameStarted,
+    /// The Warframe process went away. Comes from the process watcher, not
+    /// the log: a crash or a killed process writes no shutdown line.
+    GameClosed,
     Raw { line: String },
 }
 
@@ -111,6 +116,24 @@ impl Compiled {
         }
         None
     }
+}
+
+/// Polls the process list and sends `GameStarted` / `GameClosed` on the edges.
+/// The state at app start is the baseline: an already running game sends nothing.
+pub fn spawn_process_watcher(tx: broadcast::Sender<GameEvent>) -> std::thread::JoinHandle<()> {
+    std::thread::spawn(move || {
+        let mut running = crate::memory::find_pid().is_some();
+        loop {
+            std::thread::sleep(Duration::from_secs(5));
+            let now = crate::memory::find_pid().is_some();
+            if running && !now {
+                let _ = tx.send(GameEvent::GameClosed);
+            } else if !running && now {
+                let _ = tx.send(GameEvent::GameStarted);
+            }
+            running = now;
+        }
+    })
 }
 
 /// Tails `path` from its current end and broadcasts events. Survives the game

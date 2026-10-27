@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { ref } from "vue";
 
 export type Status = {
   export_loaded: boolean;
@@ -22,6 +23,7 @@ export type StatInput = { stat: string; value: number; negative: boolean };
 export type StatGrade = StatInput & { min: number; max: number; grade: string };
 export type RivenGrade = { weapon: string; disposition: number; stats: StatGrade[] };
 export type Trade = { id: number; ts: number; item: string; quantity: number; platinum: number; direction: "buy" | "sell"; partner: string };
+export type TradeDone = Omit<Trade, "id" | "ts"> & { order_id: string | null; slug: string | null };
 export type Datapoint = { ts: number; platinum: number; ducats: number; credits: number };
 export type RelicRun = { id: number; ts: number; relic: string; rewards: string[]; chosen: string | null };
 export type Activity = { type: string; details?: string; startedAt: number | string };
@@ -34,10 +36,22 @@ export type SyncResult ={ platinum: number; credits: number; ducats: number; ite
 export type RewardHit ={ raw: string; price: PriceSummary | null; best: boolean };
 export type GameEvent = { kind: string; name?: string; relic?: string; line?: string };
 
+const iconUrl = (icon: string) => `https://warframe.market/static/assets/${icon}`;
+const icons = new Map<string, Promise<string | null>>();
+
 export const api = {
+  /** Catalogue picture for a slug; looked up once per session. */
+  iconFor: (slug: string) => {
+    if (!icons.has(slug)) {
+      icons.set(slug, invoke<MarketItem | null>("market_item", { slug }).then((i) => (i?.icon ? iconUrl(i.icon) : null)).catch(() => null));
+    }
+    return icons.get(slug)!;
+  },
   status: () => invoke<Status>("status"),
   refreshData: () => invoke<void>("refresh_data"),
   setSetting: (key: string, value: string) => invoke<void>("set_setting", { key, value }),
+  setLaunchWithGame: (on: boolean) => invoke<void>("set_launch_with_game", { on }),
+  gameRunning: () => invoke<boolean>("game_running"),
   getSetting: (key: string) => invoke<string | null>("get_setting", { key }),
   loadProfile: (playerId: string) => invoke<MasterySummary>("load_profile", { playerId }),
   overlayPreview: () => invoke<void>("overlay_preview"),
@@ -47,6 +61,7 @@ export const api = {
   relicPlan: (relic: string) => invoke<RelicPlan>("relic_plan", { relic }),
   marketSearch: (q: string, limit = 25) => invoke<MarketItem[]>("market_search", { q, limit }),
   marketItemsById: (ids: string[]) => invoke<Record<string, MarketItem>>("market_items_by_id", { ids }),
+  marketItem: (slug: string) => invoke<MarketItem | null>("market_item", { slug }),
   marketPrice: (slug: string) => invoke<PriceSummary>("market_price", { slug }),
   marketOrders: (slug: string) => invoke<Order[]>("market_orders", { slug }),
   wfmLogin: (email: string, password: string) => invoke<string>("wfm_login", { email, password }),
@@ -64,7 +79,7 @@ export const api = {
   wfmChatSend: (id: string, message: string) => invoke<void>("wfm_chat_send", { id, message }),
   openUrl: (url: string) => invoke<void>("open_url", { url }),
   itemUrl: (slug: string) => `https://warframe.market/items/${slug}`,
-  iconUrl: (icon: string) => `https://warframe.market/static/assets/${icon}`,
+  iconUrl,
   inventory: () => invoke<InvRow[]>("inventory"),
   inventorySet: (slug: string, name: string, quantity: number) => invoke<void>("inventory_set", { slug, name, quantity }),
   inventoryAdd: (slug: string, name: string, delta: number) => invoke<number>("inventory_add", { slug, name, delta }),
@@ -72,6 +87,7 @@ export const api = {
   gradeRiven: (weapon: string, stats: StatInput[]) => invoke<RivenGrade>("grade_riven", { weapon, stats }),
   trades: () => invoke<Trade[]>("trades"),
   addTrade: (t: Omit<Trade, "id" | "ts">) => invoke<number>("add_trade", { t }),
+  recordTrade: (t: TradeDone) => invoke<number>("record_trade", { t }),
   deleteTrade: (id: number) => invoke<void>("delete_trade", { id }),
   datapoints: (limit = 500) => invoke<Datapoint[]>("datapoints", { limit }),
   addDatapoint: (platinum: number, ducats: number, credits: number) => invoke<void>("add_datapoint", { platinum, ducats, credits }),
@@ -82,3 +98,10 @@ export const api = {
 };
 
 export const fmtTs = (ts: number) => new Date(ts * 1000).toLocaleString();
+
+/** Open trade dialog (App.vue renders it). Set by a `trade_complete` game event
+ *  or by "sold" on a listing, which preselects that order. */
+export const tradePrompt = ref<{ order?: Order; onDone?: () => void } | null>(null);
+
+/** Open "new listing" dialog (App.vue renders it). `slug` preselects an item. */
+export const listingPrompt = ref<{ mode: "sell" | "buy"; slug?: string; onDone?: () => void } | null>(null);

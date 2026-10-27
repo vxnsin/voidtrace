@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { api, type MasterySummary } from "../api";
+import ItemIcon from "../components/ItemIcon.vue";
 
 const data = ref<MasterySummary | null>(null);
 const q = ref("");
@@ -41,7 +42,7 @@ onMounted(async () => {
     <thead><tr><th></th><th>Name</th><th>Category</th><th>XP</th><th>Status</th></tr></thead>
     <tbody>
       <tr v-for="i in items" :key="i.unique_name">
-        <td><img v-if="i.image" :src="i.image" width="28" height="28" loading="lazy" style="border-radius:4px;background:var(--bg3)" /></td>
+        <td><ItemIcon :src="i.image" /></td>
         <td>{{ i.name }}</td>
         <td class="muted">{{ i.category }}</td>
         <td style="min-width:140px">
