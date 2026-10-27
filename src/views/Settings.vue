@@ -15,6 +15,31 @@ function setIntro(m: "full" | "quick" | "off") {
 const launchWithGame = ref(false);
 async function rerunSetup() { await api.setSetting("setup_done", "0"); window.location.reload(); }
 const version = ref("");
+
+// Bug report: description + logs + settings (tokens removed) as a zip on the desktop.
+const bugText = ref("");
+const bugGame = ref(true);
+const bugPath = ref("");
+const bugErr = ref("");
+const bugBusy = ref(false);
+async function saveReport() {
+  bugBusy.value = true; bugErr.value = ""; bugPath.value = "";
+  try { bugPath.value = await api.exportBugReport(bugText.value, bugGame.value); }
+  catch (e) { bugErr.value = String(e); }
+  finally { bugBusy.value = false; }
+}
+function reportOnGitHub() {
+  const first = bugText.value.trim().split(/\r?\n/)[0].slice(0, 70);
+  const body = [
+    "**What happened**",
+    bugText.value.trim() || "…",
+    "",
+    `**Version** ${version.value}`,
+    "",
+    "_Attach the zip from Settings → Problems & logs (drag it into this box)._",
+  ].join("\n");
+  api.openUrl(`https://github.com/vxnsin/voidtrace/issues/new?labels=bug&title=${encodeURIComponent(first || "Bug: ")}&body=${encodeURIComponent(body)}`);
+}
 const autoUpdate = ref(true);
 const checked = ref(false);
 async function toggleAutoUpdate() { autoUpdate.value = !autoUpdate.value; await api.setSetting("update_auto", autoUpdate.value ? "1" : "0"); }
@@ -73,6 +98,19 @@ onMounted(load);
     <p class="muted" style="margin:6px 0 0">Starts hidden in the tray when you sign in to Windows and opens as soon as Warframe starts. Closing the window keeps it in the tray; quit from the tray icon.</p>
   </div>
   <div class="card" style="margin-bottom:12px">
+    <h2 style="margin-top:0">Problems &amp; logs</h2>
+    <p class="muted" style="margin-top:0">Something broke? Write what you did and what happened, save the report and send the zip — or attach it to a GitHub issue.</p>
+    <textarea v-model="bugText" rows="4" placeholder="What did you do, what did you expect, what happened instead?" class="bugtext"></textarea>
+    <label class="row" style="margin-top:8px"><input type="checkbox" v-model="bugGame" /> Include the end of Warframe's EE.log (game events; contains your in-game name)</label>
+    <div class="row" style="margin-top:10px">
+      <button class="btn primary" :disabled="bugBusy" @click="saveReport">{{ bugBusy ? "Saving…" : "Save bug report" }}</button>
+      <button class="btn" @click="reportOnGitHub">Report on GitHub</button>
+      <button class="btn" @click="api.openLogFolder()">Open log folder</button>
+    </div>
+    <p v-if="bugPath" class="ok">Saved: {{ bugPath }}</p>
+    <p v-if="bugErr" class="error">{{ bugErr }}</p>
+  </div>
+  <div class="card" style="margin-bottom:12px">
     <h2 style="margin-top:0">Updates</h2>
     <div class="row">
       <span class="muted">Installed v{{ version }}</span>
@@ -126,5 +164,6 @@ onMounted(load);
 </template>
 
 <style scoped>
+.bugtext { width: 100%; background: var(--bg3); border: 1px solid var(--border); color: inherit; padding: 8px; font: inherit; resize: vertical; }
 .notes { white-space: pre-wrap; margin: 10px 0 0; color: var(--fg2); font: inherit; max-height: 200px; overflow: auto; }
 </style>

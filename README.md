@@ -8,7 +8,7 @@
 A Warframe companion for Windows. Relic prices on screen, your warframe.market account,
 mastery and trades in one window.
 
-![version](https://img.shields.io/badge/version-0.3.0-c8102e?style=flat-square)
+![version](https://img.shields.io/badge/version-0.3.1-c8102e?style=flat-square)
 ![platform](https://img.shields.io/badge/Windows-10%20%2F%2011-1d1d21?style=flat-square)
 ![stack](https://img.shields.io/badge/Rust%20%C2%B7%20Tauri%20%C2%B7%20Vue-1d1d21?style=flat-square)
 ![license](https://img.shields.io/badge/license-MIT-1d1d21?style=flat-square)
