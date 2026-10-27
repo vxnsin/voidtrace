@@ -14,7 +14,12 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
     if let Some(w) = app.get_webview_window("overlay") {
         if let Ok(Some(m)) = w.primary_monitor() {
             w.set_position(*m.position())?;
-            w.set_size(*m.size())?;
+            // One pixel short of the screen: a borderless topmost window that
+            // covers the whole monitor counts as a fullscreen app for Windows,
+            // which can black out the game behind it.
+            let mut size = *m.size();
+            size.height = size.height.saturating_sub(1);
+            w.set_size(size)?;
         }
         w.set_ignore_cursor_events(true)?;
     }
@@ -29,6 +34,11 @@ pub fn set_edit(app: &AppHandle, on: bool) {
     *app.state::<AppState>().overlay_edit.write() = on;
     if let Some(w) = app.get_webview_window("overlay") {
         let _ = w.set_ignore_cursor_events(!on);
+        // The editor takes clicks and keys; outside it the layer is never activated.
+        #[cfg(windows)]
+        if let Ok(h) = w.hwnd() {
+            wfc_core::memory::overlay_window(h.0 as isize, false, !on);
+        }
         if on {
             show(app);
             let _ = w.set_focus();
@@ -81,8 +91,16 @@ pub fn register_hotkey(app: &AppHandle, action: &str, key: &str) -> anyhow::Resu
     Ok(())
 }
 
+/// Show the layer without taking the foreground from the game (a focused
+/// overlay would minimise or black out a starting game).
 pub fn show(app: &AppHandle) {
     if let Some(w) = app.get_webview_window("overlay") {
+        let edit = *app.state::<AppState>().overlay_edit.read();
+        #[cfg(windows)]
+        if let Ok(h) = w.hwnd() {
+            wfc_core::memory::overlay_window(h.0 as isize, true, !edit);
+            return;
+        }
         let _ = w.show();
         let _ = w.set_always_on_top(true);
     }
@@ -236,6 +254,14 @@ pub async fn on_event(app: &AppHandle, ev: GameEvent) {
         GameEvent::MissionStart { name } => auto_activity(app, "ON_MISSION", Some(name.clone())),
         GameEvent::MissionEnd => auto_activity(app, "IN_ORBITER", None),
         GameEvent::GameClosed => exit_status(app),
+        // Only on screen while the game is in front (or the editor is open).
+        GameEvent::GameFocus { focused } => {
+            if *focused {
+                show(app);
+            } else if !*st.overlay_edit.read() {
+                hide(app);
+            }
+        }
         GameEvent::GameStarted => {
             if st.db.get("launch_with_game").as_deref() == Some("1") {
                 crate::show_main(app);
