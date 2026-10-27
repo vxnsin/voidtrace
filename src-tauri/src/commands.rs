@@ -315,13 +315,14 @@ pub async fn wfm_login(app: AppHandle, st: State<'_, AppState>, email: String, p
 }
 
 #[tauri::command]
-pub async fn wfm_logout(st: State<'_, AppState>) -> R<()> {
+pub async fn wfm_logout(app: AppHandle, st: State<'_, AppState>) -> R<()> {
     let sock = st.ws.write().take();
     if let Some(s) = sock {
         s.close().await;
     }
     st.market.set_token(None);
     st.db.set("wfm_token", "").map_err(err)?;
+    crate::connect_ws(&app); // price alerts keep working signed out
     Ok(())
 }
 
@@ -468,10 +469,21 @@ pub struct TradeDone {
 /// A finished in-game trade: close the market order first (if any), so a
 /// failed close leaves nothing half-recorded, then log it and move the ledger.
 #[tauri::command]
-pub async fn record_trade(st: State<'_, AppState>, t: TradeDone) -> R<i64> {
+pub async fn record_trade(app: AppHandle, st: State<'_, AppState>, t: TradeDone) -> R<i64> {
     if let Some(id) = &t.order_id {
         st.market.close_order(id, t.quantity).await.map_err(err)?;
     }
+    let verb = if t.direction == "sell" { "Sold" } else { "Bought" };
+    let qty = if t.quantity > 1 { format!(" ×{}", t.quantity) } else { String::new() };
+    let mut n = crate::notify::Notice::new(
+        "trade",
+        format!("{verb} {}{qty} for {}p", t.item, t.platinum),
+        if t.partner.is_empty() { String::new() } else { format!("{} {}", if t.direction == "sell" { "to" } else { "from" }, t.partner) },
+    );
+    if let Some(slug) = &t.slug {
+        n = n.item(&st, slug);
+    }
+    crate::notify::send(&app, n);
     let id = st
         .db
         .add_trade(&Trade {
@@ -526,4 +538,58 @@ pub fn overlay_toggle(app: AppHandle) -> R<bool> {
     let vis = w.is_visible().map_err(err)?;
     if vis { crate::overlay::hide(&app) } else { crate::overlay::show(&app) }
     Ok(!vis)
+}
+
+#[tauri::command]
+pub fn notices() -> Vec<crate::notify::Notice> {
+    crate::notify::recent()
+}
+#[tauri::command]
+pub fn notify_kinds() -> Vec<&'static str> {
+    crate::notify::KINDS.to_vec()
+}
+/// Show a sample of one kind in game (and on the Discord hooks that take it).
+#[tauri::command]
+pub fn notify_test(app: AppHandle, kind: String) {
+    use crate::notify::Notice;
+    let n = match kind.as_str() {
+        "cycle" => Notice::new("cycle", "Cetus: night in 5 min", "day until 21:40"),
+        "fissure" => Notice::new("fissure", "Omnia Capture · Steel Path", "Hepit (Void) · Corrupted · 54 min left"),
+        "baro" => Notice::new("baro", "Baro Ki'Teer is at Larunda Relay (Mercury)", "Worth a look: Primed Chamber 210p"),
+        "undercut" => Notice::new("undercut", "Undercut: Ash Prime Set", "someone sells at 55p, you're at 60p"),
+        "price" => Notice::new("price", "Ash Prime Set for 50p", "someone just listed it (alert at 52p or less)"),
+        "trade" => Notice::new("trade", "Sold Ash Prime Set for 60p", "to someone"),
+        _ => Notice::new(&kind, "Test", "This is what a notice looks like"),
+    };
+    crate::notify::send(&app, n);
+}
+#[tauri::command]
+pub async fn discord_test(st: State<'_, AppState>, url: String) -> R<()> {
+    let n = crate::notify::Notice::new("test", "VoidTrace is connected", "Notifications you picked for this webhook will show up here.");
+    crate::notify::discord(&st.http, url.trim(), &n).await.map_err(err)
+}
+
+#[tauri::command]
+pub fn market_watch() -> crate::watch::Snapshot {
+    crate::watch::last()
+}
+#[tauri::command]
+pub async fn market_watch_refresh(app: AppHandle) -> R<crate::watch::Snapshot> {
+    crate::watch::check(&app).await.map_err(err)
+}
+#[tauri::command]
+pub fn price_alerts(st: State<AppState>) -> Vec<crate::watch::PriceAlert> {
+    crate::watch::alerts(&st)
+}
+/// Save the alerts and make sure the new-orders feed is on when there are any.
+#[tauri::command]
+pub async fn set_price_alerts(app: AppHandle, st: State<'_, AppState>, alerts: Vec<crate::watch::PriceAlert>) -> R<()> {
+    st.db.set("price_alerts", &serde_json::to_string(&alerts).map_err(err)?).map_err(err)?;
+    let sock = st.ws.read().clone();
+    match sock {
+        Some(s) if !alerts.is_empty() => s.subscribe(wfc_core::ws::new_orders_sub()).await.map_err(err)?,
+        None if !alerts.is_empty() => crate::connect_ws(&app),
+        _ => {}
+    }
+    Ok(())
 }

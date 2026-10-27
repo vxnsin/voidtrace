@@ -6,8 +6,9 @@ import FissuresWidget from "./FissuresWidget.vue";
 import RewardsWidget from "./RewardsWidget.vue";
 import SessionWidget from "./SessionWidget.vue";
 import BaroWidget from "./BaroWidget.vue";
+import NoticesWidget from "./NoticesWidget.vue";
 
-export type WidgetId = "cycles" | "fissures" | "rewards" | "session" | "baro";
+export type WidgetId = "cycles" | "fissures" | "rewards" | "session" | "baro" | "notices";
 export type FissureFilter = { tiers: string[]; missions: string[]; steelPath: "all" | "only" | "hide"; storms: boolean };
 
 /** One widget's settings, stored as JSON under the `widgets` setting.
@@ -36,6 +37,7 @@ export const WIDGETS: { id: WidgetId; cat: (typeof CATEGORIES)[number]; name: st
   { id: "baro", cat: "World", name: "Baro Ki'Teer", desc: "Countdown, relay and his offer with plat values", c: BaroWidget },
   { id: "rewards", cat: "Relics", name: "Relic rewards", desc: "Plat and ducats per card; shows itself on the reward screen", c: RewardsWidget },
   { id: "session", cat: "You", name: "Session", desc: "Plat, ducats, relics and trades since the game started", c: SessionWidget },
+  { id: "notices", cat: "You", name: "Notifications", desc: "Cycles, fissures, undercuts, Baro, trades: a line when it happens", c: NoticesWidget },
 ];
 
 const DEFAULTS: WidgetCfg[] = [
@@ -45,6 +47,7 @@ const DEFAULTS: WidgetCfg[] = [
   { id: "rewards", pinned: true, dashboard: false, anchor: 1, x: 0, y: 8, scale: 1, opacity: 0.92, size: "full", show: "always" },
   { id: "session", pinned: false, dashboard: true, anchor: 6, x: 1.5, y: 6, scale: 1, opacity: 0.88, size: "full", show: "always" },
   { id: "baro", pinned: false, dashboard: true, anchor: 7, x: 0, y: 6, scale: 1, opacity: 0.88, size: "compact", show: "orbiter" },
+  { id: "notices", pinned: true, dashboard: false, anchor: 1, x: 0, y: 1.5, scale: 1, opacity: 0.92, size: "full", show: "always" },
 ];
 
 export async function loadWidgets(): Promise<WidgetCfg[]> {

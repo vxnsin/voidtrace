@@ -109,7 +109,7 @@ onMounted(async () => {
     clearTimeout(toastTimer);
     toastTimer = window.setTimeout(() => (toast.value = ""), 2500);
   });
-  api.on<boolean>("overlay-edit", (on) => { edit.value = on; if (on) reload(); else sel.value = null; });
+  api.on<boolean>("overlay-edit", (on) => { edit.value = on; live.editing = on; if (on) reload(); else sel.value = null; });
   api.on<string>("overlay-error", (e) => { error.value = e; setTimeout(() => (error.value = ""), 6000); });
   api.on("rewards", () => (error.value = ""));
   window.addEventListener("keydown", (e) => { if (e.key === "Escape" && edit.value) done(); });

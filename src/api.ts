@@ -122,3 +122,39 @@ export const tradePrompt = ref<{ order?: Order; onDone?: () => void } | null>(nu
 
 /** Open "new listing" dialog (App.vue renders it). `slug` preselects an item. */
 export const listingPrompt = ref<{ mode: "sell" | "buy"; slug?: string; onDone?: () => void } | null>(null);
+
+export type NoticeKind = "cycle" | "fissure" | "baro" | "undercut" | "price" | "trade" | "riven";
+export type Notice = { kind: NoticeKind | string; title: string; body: string; slug?: string; icon?: string; url?: string; ts: number; sound: boolean };
+export type FissureRule = { tiers: string[]; missions: string[]; steelPath: "all" | "only" | "hide"; storms: boolean };
+export type NotifyConfig = { off: string[]; sound: string[]; cycle_lead: number; cycles: string[]; fissure: FissureRule };
+export type DiscordHook = { name: string; url: string; kinds: string[] };
+export type WatchRow = { order_id: string; item_id: string; slug: string; name: string; kind: "sell" | "buy"; mine: number; quantity: number; rank: number | null; visible: boolean; best: number | null; best_user: string | null; beaten: boolean };
+export type WatchSnapshot = { checked: number; rows: WatchRow[] };
+export type PriceAlert = { slug: string; name: string; item_id: string; max: number };
+
+export const NOTICE_KINDS: { kind: NoticeKind; label: string; hint: string }[] = [
+  { kind: "cycle", label: "World cycles", hint: "a cycle is about to flip" },
+  { kind: "fissure", label: "Fissures", hint: "a new fissure matches your rule" },
+  { kind: "baro", label: "Baro Ki'Teer", hint: "he arrived, and what's worth buying" },
+  { kind: "undercut", label: "Undercut / outbid", hint: "someone beat one of your listings" },
+  { kind: "price", label: "Price alerts", hint: "an item is listed at your price" },
+  { kind: "trade", label: "Trades", hint: "a trade was recorded and its order closed" },
+  { kind: "riven", label: "Riven sniper", hint: "a riven auction matches a saved search" },
+];
+
+export const notifyApi = {
+  notices: () => invoke<Notice[]>("notices"),
+  test: (kind: string) => invoke<void>("notify_test", { kind }),
+  discordTest: (url: string) => invoke<void>("discord_test", { url }),
+  config: async (): Promise<NotifyConfig> => {
+    const d: NotifyConfig = { off: [], sound: [], cycle_lead: 5, cycles: [], fissure: { tiers: [], missions: [], steelPath: "all", storms: true } };
+    try { return { ...d, ...JSON.parse((await api.getSetting("notify")) ?? "{}") }; } catch { return d; }
+  },
+  saveConfig: (c: NotifyConfig) => api.setSetting("notify", JSON.stringify(c)),
+  hooks: async (): Promise<DiscordHook[]> => { try { return JSON.parse((await api.getSetting("discord_hooks")) ?? "[]"); } catch { return []; } },
+  saveHooks: (h: DiscordHook[]) => api.setSetting("discord_hooks", JSON.stringify(h)),
+  watch: () => invoke<WatchSnapshot>("market_watch"),
+  watchRefresh: () => invoke<WatchSnapshot>("market_watch_refresh"),
+  alerts: () => invoke<PriceAlert[]>("price_alerts"),
+  setAlerts: (alerts: PriceAlert[]) => invoke<void>("set_price_alerts", { alerts }),
+};

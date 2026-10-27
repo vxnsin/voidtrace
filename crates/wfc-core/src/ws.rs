@@ -5,7 +5,9 @@
 use anyhow::{bail, Context, Result};
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
+use parking_lot::Mutex;
 use serde_json::{json, Value};
+use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc};
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::Message;
@@ -40,6 +42,9 @@ pub enum WsEvent {
     Disconnected { reason: String },
     SignedIn,
     Status(RichStatus),
+    /// A new order anywhere on the market (after `subscribe`); the payload is
+    /// the order with its `user`, shaped like `market::Order`.
+    NewOrder(Value),
     Raw { route: String, payload: Value },
 }
 
@@ -53,20 +58,32 @@ pub enum Command {
 pub struct Socket {
     tx: mpsc::Sender<Command>,
     pub events: broadcast::Sender<WsEvent>,
+    /// Subscribe messages, sent again after every reconnect.
+    subs: Arc<Mutex<Vec<Value>>>,
+}
+
+/// Every new order on the market, for price alerts (no item filter on the
+/// server side; we filter).
+pub fn new_orders_sub() -> Value {
+    json!({ "route": "@wfm|cmd/subscribe/newOrders", "payload": { "platform": "pc", "crossplay": true } })
 }
 
 impl Socket {
     /// Builds the socket handle and the driver future, which connects, signs
-    /// in and keeps reconnecting until `Close`. The caller spawns the future
-    /// on its runtime (this crate does not assume one is current).
-    pub fn connect(token: String) -> (Socket, impl std::future::Future<Output = ()> + Send) {
+    /// in (when there is a token) and keeps reconnecting until `Close`. The
+    /// caller spawns the future on its runtime (this crate does not assume one
+    /// is current).
+    pub fn connect(token: Option<String>) -> (Socket, impl std::future::Future<Output = ()> + Send) {
         let (tx, mut rx) = mpsc::channel::<Command>(32);
-        let (events, _) = broadcast::channel::<WsEvent>(64);
+        let (events, _) = broadcast::channel::<WsEvent>(256);
         let ev = events.clone();
+        let subs: Arc<Mutex<Vec<Value>>> = Arc::default();
+        let subs2 = subs.clone();
         let driver = async move {
             let mut backoff = 2u64;
             loop {
-                match run(&token, &mut rx, &ev).await {
+                let resend = subs2.lock().clone();
+                match run(token.as_deref(), &resend, &mut rx, &ev).await {
                     Ok(()) => break, // closed on purpose
                     Err(e) => {
                         let _ = ev.send(WsEvent::Disconnected { reason: e.to_string() });
@@ -77,7 +94,19 @@ impl Socket {
                 backoff = (backoff * 2).min(60);
             }
         };
-        (Socket { tx, events }, driver)
+        (Socket { tx, events, subs }, driver)
+    }
+
+    /// Send a subscribe message now and after every reconnect (once per route).
+    pub async fn subscribe(&self, msg: Value) -> Result<()> {
+        {
+            let mut s = self.subs.lock();
+            if s.iter().any(|m| m["route"] == msg["route"]) {
+                return Ok(());
+            }
+            s.push(msg.clone());
+        }
+        self.send_raw(msg).await
     }
 
     pub async fn set_status(&self, status: &str, duration: Option<u32>, activity: Option<Activity>) -> Result<()> {
@@ -96,7 +125,7 @@ impl Socket {
     }
 }
 
-async fn run(token: &str, rx: &mut mpsc::Receiver<Command>, ev: &broadcast::Sender<WsEvent>) -> Result<()> {
+async fn run(token: Option<&str>, subs: &[Value], rx: &mut mpsc::Receiver<Command>, ev: &broadcast::Sender<WsEvent>) -> Result<()> {
     let mut req = URL.into_client_request()?;
     req.headers_mut().insert("Sec-WebSocket-Protocol", "wfm".parse()?);
     req.headers_mut().insert("User-Agent", crate::market::USER_AGENT.parse()?);
@@ -104,10 +133,15 @@ async fn run(token: &str, rx: &mut mpsc::Receiver<Command>, ev: &broadcast::Send
     let (mut sink, mut stream) = ws.split();
     let _ = ev.send(WsEvent::Connected);
 
-    sink.send(Message::Text(
-        json!({ "route": "@wfm|cmd/auth/signIn", "id": "signin", "payload": { "token": token } }).to_string(),
-    ))
-    .await?;
+    if let Some(token) = token {
+        sink.send(Message::Text(
+            json!({ "route": "@wfm|cmd/auth/signIn", "id": "signin", "payload": { "token": token } }).to_string(),
+        ))
+        .await?;
+    }
+    for s in subs {
+        sink.send(Message::Text(s.to_string())).await?;
+    }
 
     let mut seq = 0u64;
     loop {
@@ -152,6 +186,7 @@ fn handle(text: &str, ev: &broadcast::Sender<WsEvent>) {
             Ok(s) => WsEvent::Status(s),
             Err(_) => WsEvent::Raw { route, payload },
         },
+        "@wfm|event/subscriptions/newOrder" => WsEvent::NewOrder(payload),
         _ => WsEvent::Raw { route, payload },
     };
     let _ = ev.send(out);

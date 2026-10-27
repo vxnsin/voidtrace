@@ -1,6 +1,8 @@
 mod commands;
 mod diag;
+mod notify;
 mod overlay;
+mod watch;
 
 use parking_lot::RwLock;
 use std::sync::Arc;
@@ -25,23 +27,41 @@ pub struct AppState {
 }
 
 /// (Re)connect the warframe.market socket with the current token and forward
-/// its events to the UI. No-op without a token.
+/// its events to the UI. Without a token it only connects for price alerts.
 pub fn connect_ws(app: &tauri::AppHandle) {
     let st = app.state::<AppState>();
-    let Some(token) = st.market.token() else { return };
+    let token = st.market.token();
+    let alerts = !watch::alerts(&st).is_empty();
     if let Some(old) = st.ws.write().take() {
         let h = old.clone();
         tauri::async_runtime::spawn(async move { h.close().await });
     }
+    if token.is_none() && !alerts {
+        return;
+    }
     let (sock, driver) = wfc_core::ws::Socket::connect(token);
     let mut rx = sock.events.subscribe();
-    *st.ws.write() = Some(sock);
+    *st.ws.write() = Some(sock.clone());
     tauri::async_runtime::spawn(driver);
+    if alerts {
+        tauri::async_runtime::spawn(async move { sock.subscribe(wfc_core::ws::new_orders_sub()).await });
+    }
     let app2 = app.clone();
     tauri::async_runtime::spawn(async move {
-        while let Ok(ev) = rx.recv().await {
-            if let wfc_core::ws::WsEvent::Status(s) = &ev {
-                *app2.state::<AppState>().wfm_status.write() = Some(s.clone());
+        loop {
+            let ev = match rx.recv().await {
+                Ok(ev) => ev,
+                // The new-orders feed is busy; dropping some under load is fine.
+                Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(_) => break,
+            };
+            match &ev {
+                wfc_core::ws::WsEvent::NewOrder(o) => {
+                    watch::on_new_order(&app2, o);
+                    continue;
+                }
+                wfc_core::ws::WsEvent::Status(s) => *app2.state::<AppState>().wfm_status.write() = Some(s.clone()),
+                _ => {}
             }
             let _ = app2.emit("wfm-ws", &ev);
         }
@@ -189,6 +209,7 @@ pub fn run() {
                     match wfc_core::worldstate::fetch(&st.http).await {
                         Ok(v) => {
                             *st.worldstate.write() = Some(v.clone());
+                            notify::on_worldstate(&h4, &v);
                             let _ = h4.emit("worldstate", &v);
                         }
                         Err(e) => tracing::warn!("worldstate: {e}"),
@@ -205,6 +226,7 @@ pub fn run() {
                 }
             }
             connect_ws(&handle);
+            watch::spawn(&handle);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -262,6 +284,14 @@ pub fn run() {
             commands::ocr_now,
             commands::overlay_toggle,
             commands::overlay_preview,
+            commands::notices,
+            commands::notify_kinds,
+            commands::notify_test,
+            commands::discord_test,
+            commands::market_watch,
+            commands::market_watch_refresh,
+            commands::price_alerts,
+            commands::set_price_alerts,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

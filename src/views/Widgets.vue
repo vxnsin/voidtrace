@@ -4,6 +4,7 @@ import { api } from "../api";
 import { startLive } from "../widgets/live";
 import { CATEGORIES, WIDGETS, loadWidgets, saveWidgets, type WidgetCfg } from "../widgets/registry";
 import WidgetSettings from "../widgets/WidgetSettings.vue";
+import NotifyCard from "../components/NotifyCard.vue";
 
 // Quick setup: each widget live with its settings next to it. Placing and
 // fine-tuning happens in game, in the overlay's edit mode.
@@ -74,6 +75,9 @@ onUnmounted(() => window.removeEventListener("keydown", capture));
     </div>
     <span class="muted">{{ msg || "Click a hotkey and press the new combination. They work system-wide while VoidTrace runs, so pick combinations other programs do not need." }}</span>
   </div>
+
+  <h2>Notifications</h2>
+  <NotifyCard />
 
   <template v-if="cfgs.length">
     <template v-for="c in CATEGORIES" :key="c">

@@ -4,6 +4,7 @@ import { api, type Status } from "../api";
 import { getVersion } from "@tauri-apps/api/app";
 import { checkForUpdate, installUpdate, updates } from "../updates";
 import ThemeCard from "../components/ThemeCard.vue";
+import DiscordCard from "../components/DiscordCard.vue";
 
 defineProps<{ status: Status | null }>();
 const emit = defineEmits(["refresh"]);
@@ -84,6 +85,7 @@ onMounted(load);
 <template>
   <h1>Settings</h1>
   <ThemeCard style="margin-bottom:12px" />
+  <DiscordCard style="margin-bottom:12px" />
   <div class="card" style="margin-bottom:12px">
     <h2 style="margin-top:0">Startup</h2>
     <div class="row">
