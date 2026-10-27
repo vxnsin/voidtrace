@@ -54,8 +54,8 @@ onMounted(async () => {
       <div class="grid cols-4" style="margin-top:12px">
         <div class="stat">{{ Math.round(res.prices.trimmed_avg) }}p<small>average now · {{ res.prices.count }} buyouts, outliers dropped</small></div>
         <div class="stat">{{ Math.round(res.prices.low) }}–{{ Math.round(res.prices.high) }}p<small>usual range now</small></div>
-        <div class="stat">{{ unrolled ? Math.round(unrolled.avg) + "p" : "–" }}<small>unrolled · DE weekly avg{{ unrolled ? ` · ${unrolled.pop}% of trades` : "" }}</small></div>
-        <div class="stat">{{ rolled ? Math.round(rolled.avg) + "p" : "–" }}<small>rolled · DE weekly avg{{ rolled ? `, median ${Math.round(rolled.median)}p` : "" }}</small></div>
+        <div class="stat">{{ unrolled ? Math.round(unrolled.median) + "p" : "–" }}<small>unrolled · DE weekly median{{ unrolled ? `, avg ${Math.round(unrolled.avg)}p` : "" }}</small></div>
+        <div class="stat">{{ rolled ? Math.round(rolled.median) + "p" : "–" }}<small>rolled · DE weekly median{{ rolled ? `, avg ${Math.round(rolled.avg)}p` : "" }}</small></div>
       </div>
       <h2>Stats that raise the price</h2>
       <div class="row">

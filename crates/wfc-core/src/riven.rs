@@ -281,7 +281,15 @@ pub async fn riven_auctions(http: &reqwest::Client, weapon: &str) -> anyhow::Res
 
 pub async fn weekly_rivens(http: &reqwest::Client) -> anyhow::Result<Vec<WeeklyRiven>> {
     let text = http.get("https://www-static.warframe.com/repos/weeklyRivensPC.json").send().await?.error_for_status()?.text().await?;
-    Ok(serde_json::from_str(&text)?)
+    Ok(serde_json::from_str(&js_to_json(&text))?)
+}
+
+/// DE ships this file as a JavaScript literal (bare keys, single quotes).
+fn js_to_json(s: &str) -> String {
+    let keys = regex::Regex::new(r"(?m)^(\s*)([A-Za-z_][A-Za-z0-9_]*)\s*:").unwrap();
+    let quoted = regex::Regex::new(r"'([^']*)'").unwrap();
+    let s = keys.replace_all(s, "$1\"$2\":");
+    quoted.replace_all(&s, |c: &regex::Captures| serde_json::to_string(&c[1]).unwrap_or_default()).into_owned()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -371,6 +379,22 @@ mod market_tests {
             created: String::new(),
             attributes: attrs.iter().map(|a| RivenAttr { url_name: a.to_string(), value: 1.0, positive: true }).collect(),
         }
+    }
+
+    #[test]
+    fn weekly_file_parses() {
+        let raw = "[
+  {
+    itemType: 'Rifle Riven Mod',
+    compatibility: 'Rubico',
+    rerolled: false,
+    avg: 133.36,
+    median: 25
+  }
+]";
+        let w: Vec<WeeklyRiven> = serde_json::from_str(&js_to_json(raw)).unwrap();
+        assert_eq!(w[0].compatibility.as_deref(), Some("Rubico"));
+        assert_eq!(w[0].median, 25.0);
     }
 
     #[test]

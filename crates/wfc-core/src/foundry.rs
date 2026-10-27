@@ -61,6 +61,10 @@ impl<'a> Index<'a> {
     }
 }
 
+pub fn is_resource(path: &str) -> bool {
+    path.contains("/Types/Items/")
+}
+
 fn count(owned: &Owned, path: &str) -> i64 {
     owned.get(path).copied().unwrap_or(0)
 }
@@ -70,7 +74,9 @@ pub fn build(ex: &Export, idx: &Index, owned: &Owned, it: &ExportItem) -> Build 
     let mut parts = vec![];
     if let Some(r) = recipe {
         for ing in &r.ingredients {
-            let sub = idx.recipe_for(&ing.item_type);
+            // Resources (Orokin Cells, Neural Sensors) have recipes too, but they
+            // are farmed, not parts with blueprints.
+            let sub = if is_resource(&ing.item_type) { None } else { idx.recipe_for(&ing.item_type) };
             let bp = sub.map(|s| s.unique_name.clone());
             // The tradable thing is the part itself (weapon parts) or its blueprint.
             let m = idx.market(&ing.item_type).or_else(|| bp.as_deref().and_then(|b| idx.market(b)));
@@ -220,7 +226,7 @@ pub fn relic_routes(
         let Some(bp) = &b.blueprint else { continue };
         // Main blueprint and parts, by the names relics use ("… Blueprint").
         let mut wanted: Vec<(String, bool)> = vec![(ex.item_name(bp), b.bp_have > 0)];
-        for p in &b.parts {
+        for p in b.parts.iter().filter(|p| !is_resource(&p.path)) {
             let name = p.blueprint.as_deref().map(|x| ex.item_name(x)).unwrap_or_else(|| p.name.clone());
             wanted.push((name, p.have + p.bp_have >= p.need));
         }

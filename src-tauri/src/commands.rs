@@ -764,7 +764,7 @@ pub async fn foundry_sources(st: State<'_, AppState>, unique_name: String) -> R<
         if let Some(bp) = &b.blueprint {
             w.push((ex.item_name(bp), b.bp_slug.clone()));
         }
-        for p in &b.parts {
+        for p in b.parts.iter().filter(|p| !foundry::is_resource(&p.path)) {
             w.push((p.blueprint.as_deref().map(|x| ex.item_name(x)).unwrap_or(p.name.clone()), p.slug.clone()));
         }
         w
@@ -859,7 +859,7 @@ pub fn mastery_routes(app: AppHandle, st: State<AppState>) -> R<MasteryRoutes> {
             if b.blueprint.is_some() && b.bp_have == 0 {
                 buy.push((ex.item_name(b.blueprint.as_deref().unwrap()), b.bp_slug.clone()?));
             }
-            for p in &b.parts {
+            for p in b.parts.iter().filter(|p| !foundry::is_resource(&p.path)) {
                 if p.have + p.bp_have < p.need {
                     // Not tradable (resources, non-prime parts): no plat route.
                     let slug = p.slug.clone()?;
