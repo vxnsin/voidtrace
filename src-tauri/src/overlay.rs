@@ -201,14 +201,14 @@ pub async fn sync_inventory(app: &AppHandle) -> anyhow::Result<crate::commands::
 /// The game parses the inventory document right after receiving it and frees
 /// the buffer, which then gets overwritten over the next minutes. So: scan as
 /// soon as a loading screen is over and keep retrying for a while.
-fn auto_sync(app: &AppHandle, initial_delay_secs: u64) {
+fn auto_sync(app: &AppHandle, initial_delay_ms: u64, interval_ms: u64) {
     let st = app.state::<AppState>();
     if st.db.get("memory_sync").as_deref() != Some("1") {
         return;
     }
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
-        tokio::time::sleep(std::time::Duration::from_secs(initial_delay_secs)).await;
+        tokio::time::sleep(std::time::Duration::from_millis(initial_delay_ms)).await;
         let mut last_err = String::new();
         for attempt in 0..20 {
             match sync_inventory(&app).await {
@@ -223,7 +223,7 @@ fn auto_sync(app: &AppHandle, initial_delay_secs: u64) {
                     }
                 }
             }
-            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+            tokio::time::sleep(std::time::Duration::from_millis(interval_ms)).await;
         }
         tracing::warn!("inventory sync gave up: {last_err}");
         let _ = app.emit("inventory-sync-error", last_err);
@@ -269,7 +269,10 @@ pub async fn on_event(app: &AppHandle, ev: GameEvent) {
     let st = app.state::<AppState>();
     match &ev {
         GameEvent::LoggedIn { .. } => auto_activity(app, "IN_ORBITER", None),
-        GameEvent::MissionStart { name } => auto_activity(app, "ON_MISSION", Some(name.clone())),
+        GameEvent::MissionStart { name } => {
+            let pretty = st.export.read().as_ref().map(|ex| ex.node_name(name)).unwrap_or_else(|| name.clone());
+            auto_activity(app, "ON_MISSION", Some(pretty));
+        }
         GameEvent::MissionEnd => auto_activity(app, "IN_ORBITER", None),
         GameEvent::GameClosed => exit_status(app),
         // Only on screen while the game is in front (or the editor is open).
@@ -299,13 +302,17 @@ pub async fn on_event(app: &AppHandle, ev: GameEvent) {
                     let _ = st.db.set("player_id", &id);
                 }
             }
-            // The inventory arrives right after login.
-            auto_sync(app, 4);
+            // The inventory itself is synced on InventoryReceived, which follows within a second.
             show(app);
         }
-        GameEvent::MissionStart { .. } => auto_sync(app, 6),
+        // The document is intact the moment the game logs it; scan at once, retry quickly.
+        GameEvent::InventoryReceived { size } => {
+            tracing::info!("inventory document received ({size} bytes), scanning");
+            auto_sync(app, 300, 1000);
+        }
+        // Fallback for logs without the OnInventoryResults line.
         GameEvent::MissionEnd => {
-            auto_sync(app, 4);
+            auto_sync(app, 4000, 3000);
             let _ = app.emit("rewards-done", ());
         }
         GameEvent::RelicOpened { relic } => {

@@ -24,3 +24,21 @@ fn defaults_match_real_lines() {
         Some("T2VoidProjectionProteaPrimeA")
     );
 }
+
+#[test]
+fn inventory_received_line() {
+    let p = Patterns::default();
+    assert_eq!(
+        cap(&p.inventory_received, "14.972 Sys [Info]: OnInventoryResults, body size=447803").as_deref(),
+        Some("447803")
+    );
+}
+
+#[test]
+fn mission_start_line() {
+    let p = Patterns::default();
+    assert_eq!(
+        cap(&p.mission_start, r#"849.502 Net [Info]: Set squad mission: {"difficulty":1,"name":"SolNode409"}"#).as_deref(),
+        Some("SolNode409")
+    );
+}

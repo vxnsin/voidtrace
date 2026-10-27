@@ -14,6 +14,8 @@ let poll: number | undefined;
 
 const email = ref(""); const password = ref(""); const who = ref(""); const loginErr = ref(""); const busy = ref(false);
 const memorySync = ref(false); const sync = ref<SyncResult | null>(null); const syncErr = ref("");
+// "Not found" right after a late app start is expected; the step may continue.
+const syncLater = ref(false);
 const overlay = ref(true); const launch = ref(false);
 
 async function refresh() {
@@ -30,7 +32,7 @@ async function setMemorySync(on: boolean) {
   await api.setSetting("memory_sync", on ? "1" : "0");
 }
 async function testSync() {
-  busy.value = true; syncErr.value = ""; sync.value = null;
+  busy.value = true; syncErr.value = ""; sync.value = null; syncLater.value = false;
   try { sync.value = await api.inventorySync(); }
   catch (e) {
     const m = String(e);
@@ -38,7 +40,9 @@ async function testSync() {
       ? "Can't read the game. Start Warframe and VoidTrace the same way — neither as administrator — then try again."
       : /not running/.test(m) ? "Warframe isn't running yet. Start it, log in, then test again."
       : /not loaded/.test(m) ? "Game data is still downloading — give it a few seconds."
-      : `${m} — log in fully (past the loading screen) and try again; the inventory is only in memory for a while after login.`;
+      : /not found/.test(m)
+      ? (syncLater.value = true, "Not in memory right now — normal when VoidTrace started after the game. It syncs itself at the next loading screen (any mission or relay); you can go on.")
+      : m;
   } finally { busy.value = false; }
 }
 async function finish() {
@@ -55,7 +59,7 @@ const canNext = computed(() => step.value < steps.length - 1);
 const done = computed(() => {
   if (step.value === 1) return !!status.value?.ee_log_exists && running.value;
   if (step.value === 2) return !!status.value?.wfm_logged_in;
-  if (step.value === 3) return !memorySync.value || !!sync.value;
+  if (step.value === 3) return !memorySync.value || !!sync.value || syncLater.value;
   return true;
 });
 
@@ -99,6 +103,8 @@ onMounted(async () => {
   launch.value = (await api.getSetting("launch_with_game")) === "1";
   await refresh();
   poll = window.setInterval(refresh, 2000);
+  // An automatic sync (next loading screen) completes the step on its own.
+  api.on<SyncResult>("inventory-synced", (r) => { sync.value = r; syncErr.value = ""; });
 });
 onUnmounted(() => { clearInterval(poll); cancelAnimationFrame(raf); });
 onMounted(rain);
@@ -156,7 +162,7 @@ onMounted(rain);
           <span class="muted" v-if="!running">start Warframe first</span>
         </div>
         <p v-if="sync" class="ok">Found {{ sync.items_tradeable }} tradeable of {{ sync.items_total }} items · {{ sync.platinum }}p · {{ sync.ducats }} ducats in {{ sync.seconds.toFixed(1) }}s</p>
-        <p v-if="syncErr" class="error">{{ syncErr }}</p>
+        <p v-if="syncErr" :class="syncLater ? 'muted' : 'error'">{{ syncErr }}</p>
       </section>
 
       <section v-if="step === 4">

@@ -66,6 +66,15 @@ struct Resource {
     name: String,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+struct Region {
+    #[serde(rename = "uniqueName")]
+    unique_name: String,
+    name: String,
+    #[serde(default, rename = "systemName")]
+    system_name: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Ingredient {
     #[serde(rename = "ItemType")]
@@ -108,6 +117,9 @@ pub struct Export {
     /// Blueprints of masterable items and their components.
     #[serde(default)]
     pub recipes: Vec<Recipe>,
+    /// Star chart node id ("SolNode409") -> "Name (Planet)".
+    #[serde(default)]
+    pub regions: HashMap<String, String>,
 }
 
 const MASTERABLE_CATEGORIES: &[&str] = &[
@@ -207,6 +219,12 @@ impl Export {
             get(client, &files, "ExportRecipes", "ExportRecipes").await.unwrap_or_default();
         let upgrades: Vec<Resource> =
             get(client, &files, "ExportUpgrades", "ExportUpgrades").await.unwrap_or_default();
+        let regions: HashMap<String, String> = get::<Region>(client, &files, "ExportRegions", "ExportRegions")
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .map(|r| (r.unique_name, if r.system_name.is_empty() { r.name } else { format!("{} ({})", r.name, r.system_name) }))
+            .collect();
         // Relic names before the " Relic" trim, for inventory display.
         let relic_names: Vec<(String, String)> =
             relics.iter().map(|r| (r.unique_name.clone(), r.name.clone())).collect();
@@ -278,6 +296,7 @@ impl Export {
                 .into_iter()
                 .filter(|r| !r.ingredients.is_empty())
                 .collect(),
+            regions,
         };
         std::fs::write(Self::cache_path(), serde_json::to_string(&ex)?)?;
         Ok(ex)
@@ -300,6 +319,10 @@ impl Export {
             .or_else(|| self.item_names.get(path))
             .cloned()
             .unwrap_or_else(|| crate::relic::reward_display(path))
+    }
+
+    pub fn node_name(&self, node: &str) -> String {
+        self.regions.get(node).cloned().unwrap_or_else(|| node.to_string())
     }
 
     pub fn reward_name(&self, path: &str) -> String {

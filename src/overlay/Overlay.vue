@@ -98,6 +98,30 @@ async function moved(id: string, pos: { anchor: number; x: number; y: number }, 
 }
 const done = () => { sel.value = null; api.overlayEdit(false); };
 
+// The settings panel can be dragged by its header; the spot is remembered.
+const panelPos = ref<{ x: number; y: number } | null>(null);
+try { const s = localStorage.getItem("overlay_panel_pos"); if (s) panelPos.value = JSON.parse(s); } catch {}
+const panelStyle = computed(() => panelPos.value ? { left: panelPos.value.x + "px", top: panelPos.value.y + "px", right: "auto", transform: "none" } : {});
+function panelDown(e: PointerEvent) {
+  if ((e.target as HTMLElement).closest("button")) return;
+  const el = (e.currentTarget as HTMLElement).parentElement!;
+  const r = el.getBoundingClientRect();
+  const off = { x: e.clientX - r.left, y: e.clientY - r.top };
+  const move = (ev: PointerEvent) => {
+    const x = Math.min(Math.max(0, ev.clientX - off.x), window.innerWidth - r.width);
+    const y = Math.min(Math.max(0, ev.clientY - off.y), window.innerHeight - r.height);
+    panelPos.value = { x, y };
+  };
+  const up = () => {
+    window.removeEventListener("pointermove", move);
+    window.removeEventListener("pointerup", up);
+    try { localStorage.setItem("overlay_panel_pos", JSON.stringify(panelPos.value)); } catch {}
+  };
+  window.addEventListener("pointermove", move);
+  window.addEventListener("pointerup", up);
+  e.preventDefault();
+}
+
 onMounted(async () => {
   document.body.classList.add("overlay");
   startLive();
@@ -139,13 +163,13 @@ onMounted(async () => {
       </div>
 
       <!-- settings panel -->
-      <div class="panel" @pointerdown.stop>
+      <div class="panel" :style="panelStyle" @pointerdown.stop>
         <template v-if="selected">
-          <div class="ph"><b>{{ meta(selected.id).name }}</b><button class="act" @click="remove(selected.id)">Remove</button></div>
+          <div class="ph" @pointerdown="panelDown"><b>{{ meta(selected.id).name }}</b><button class="act" @click="remove(selected.id)">Remove</button></div>
           <WidgetSettings :cfg="selected" @update="(p) => update(selected!.id, p)" />
         </template>
         <template v-else>
-          <div class="ph"><b>All widgets</b></div>
+          <div class="ph" @pointerdown="panelDown"><b>All widgets</b></div>
           <div class="ws-all">
             <label><span>Opacity</span><input type="range" min="0.4" max="1" step="0.02" :value="cfgs[0]?.opacity ?? 0.88" @change="updateAll({ opacity: Number(($event.target as HTMLInputElement).value) })" /></label>
             <label><span>Scale</span><input type="range" min="0.7" max="1.6" step="0.05" :value="cfgs[0]?.scale ?? 1" @change="updateAll({ scale: Number(($event.target as HTMLInputElement).value) })" /></label>
@@ -187,7 +211,8 @@ onMounted(async () => {
 .palette.drop { background: color-mix(in srgb, var(--accent) 30%, var(--wbg)); }
 .dropmsg { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--accent2); letter-spacing: .2em; text-transform: uppercase; font-size: 12px; background: color-mix(in srgb, var(--accent) 25%, transparent); z-index: 2; pointer-events: none; }
 .panel { position: absolute; right: 16px; top: 50%; transform: translateY(-50%); width: 320px; background: color-mix(in srgb, var(--wbg) 95%, transparent); border: 1px solid var(--accent); padding: 12px; z-index: 20; }
-.ph { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.ph { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; cursor: grab; user-select: none; }
+.ph:active { cursor: grabbing; }
 .ph b { color: var(--accent2); letter-spacing: .12em; text-transform: uppercase; font: 500 11px var(--mono); }
 .ws-all { display: grid; gap: 10px; font: 11px var(--mono); color: var(--fg2); }
 .ws-all label { display: flex; align-items: center; gap: 10px; }
