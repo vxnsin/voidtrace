@@ -1,6 +1,11 @@
 <!doctype html>
 <html lang="en">
   <head>
+    <script>
+      // The overlay window must be see-through from its very first frame,
+      // before any app code runs; a dark page there is a black screen over the game.
+      if (location.hash.startsWith("#/overlay")) document.documentElement.classList.add("overlay");
+    </script>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>VoidTrace</title>

@@ -80,6 +80,7 @@ export function placeFromRect(r: DOMRect, layer: DOMRect): { anchor: number; x: 
   const left = r.left - layer.left, top = r.top - layer.top;
   const x = col === 0 ? left / W : col === 1 ? (cx - W / 2) / W : (W - (left + r.width)) / W;
   const y = row === 0 ? top / H : row === 1 ? (cy - H / 2) / H : (H - (top + r.height)) / H;
-  const round = (v: number) => Math.round(v * 1000) / 10;
-  return { anchor: row * 3 + col, x: round(x), y: round(y) };
+  // Edge anchors measure inwards, so a negative offset would be off screen.
+  const round = (v: number, centred: boolean) => Math.round((centred ? v : Math.max(0, v)) * 1000) / 10;
+  return { anchor: row * 3 + col, x: round(x, col === 1), y: round(y, row === 1) };
 }

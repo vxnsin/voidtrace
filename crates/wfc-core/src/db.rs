@@ -67,6 +67,13 @@ impl Db {
             .query_row("SELECT v FROM settings WHERE k=?1", [k], |r| r.get(0))
             .ok()
     }
+    /// Every setting, sorted by key (for bug reports).
+    pub fn settings(&self) -> Result<Vec<(String, String)>> {
+        let c = self.0.lock();
+        let mut s = c.prepare("SELECT k, v FROM settings ORDER BY k")?;
+        let rows = s.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
     pub fn set(&self, k: &str, v: &str) -> Result<()> {
         self.0.lock().execute(
             "INSERT INTO settings(k,v) VALUES(?1,?2) ON CONFLICT(k) DO UPDATE SET v=excluded.v",

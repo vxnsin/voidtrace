@@ -1,4 +1,5 @@
 mod commands;
+mod diag;
 mod overlay;
 
 use parking_lot::RwLock;
@@ -83,7 +84,8 @@ fn tray(app: &tauri::App) -> tauri::Result<()> {
 }
 
 pub fn run() {
-    tracing_subscriber::fmt().with_env_filter("info,voidtrace=debug,wfc_core=debug").init();
+    diag::init_logging();
+    tracing::info!("VoidTrace {} starting", env!("CARGO_PKG_VERSION"));
 
     let http = reqwest::Client::builder()
         .user_agent(wfc_core::market::USER_AGENT)
@@ -224,6 +226,9 @@ pub fn run() {
             commands::worldstate,
             commands::overlay_edit,
             commands::set_overlay_hotkey,
+            commands::log_frontend,
+            commands::export_bug_report,
+            commands::open_log_folder,
             commands::overlay_hotkeys,
             commands::hud_hidden,
             commands::set_hud_hidden,

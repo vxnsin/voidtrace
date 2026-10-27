@@ -211,6 +211,44 @@ pub fn overlay_edit(app: AppHandle, on: bool) {
     crate::overlay::set_edit(&app, on);
 }
 
+/// Errors and warnings from the UI, into the same log file as the backend.
+#[tauri::command]
+pub fn log_frontend(level: String, message: String) {
+    match level.as_str() {
+        "error" => tracing::error!(target: "ui", "{message}"),
+        "warn" => tracing::warn!(target: "ui", "{message}"),
+        _ => tracing::info!(target: "ui", "{message}"),
+    }
+}
+
+/// Zip a description, the app logs, the settings (tokens removed) and optionally
+/// the end of EE.log onto the desktop, and show it in Explorer.
+#[tauri::command]
+pub fn export_bug_report(app: AppHandle, st: State<AppState>, description: String, include_game_log: bool) -> R<String> {
+    use tauri_plugin_opener::OpenerExt;
+    tracing::info!("bug report requested: {description}");
+    let version = app.package_info().version.to_string();
+    let path = crate::diag::write_report(&crate::diag::Report {
+        version: &version,
+        description: &description,
+        include_game_log,
+        game_running: wfc_core::memory::find_pid().is_some(),
+        settings: st.db.settings().map_err(err)?,
+    })
+    .map_err(err)?;
+    let _ = app.opener().reveal_item_in_dir(&path);
+    Ok(path.display().to_string())
+}
+
+/// Open the log folder (LOCALAPPDATA/VoidTrace/logs) in Explorer.
+#[tauri::command]
+pub fn open_log_folder(app: AppHandle) -> R<()> {
+    use tauri_plugin_opener::OpenerExt;
+    let dir = crate::diag::log_dir();
+    std::fs::create_dir_all(&dir).map_err(err)?;
+    app.opener().open_path(dir.display().to_string(), None::<&str>).map_err(err)
+}
+
 /// Rebind the hotkey of an overlay action ("edit" or "hud") and remember it.
 #[tauri::command]
 pub fn set_overlay_hotkey(app: AppHandle, st: State<AppState>, action: String, key: String) -> R<()> {
@@ -326,8 +364,8 @@ pub async fn wfm_chat_send(st: State<'_, AppState>, id: String, message: String)
 #[tauri::command]
 pub fn open_url(app: AppHandle, url: String) -> R<()> {
     use tauri_plugin_opener::OpenerExt;
-    if !url.starts_with("https://warframe.market/") {
-        return Err("only warframe.market links".into());
+    if !url.starts_with("https://warframe.market/") && !url.starts_with("https://github.com/vxnsin/voidtrace/") {
+        return Err("only warframe.market and VoidTrace links".into());
     }
     app.opener().open_url(url, None::<&str>).map_err(err)
 }
