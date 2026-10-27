@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from "vue";
-import { LOTUS, LOTUS_ASPECT, LOTUS_W } from "./lotus";
+import { MARK, MARK_ASPECT, MARK_W } from "./mark";
 
 const emit = defineEmits<{ done: [] }>();
 const props = defineProps<{ backendOk: boolean }>();
@@ -16,7 +16,7 @@ let raf = 0;
 let start = 0;
 let ctx: CanvasRenderingContext2D;
 let cols = 0, rows = 0;
-const CW = 6, CH = 10;
+const CW = 8, CH = 14;
 const RAMP = " .,:;!?jJ$8@#";
 
 function setMode(m: Mode) {
@@ -40,28 +40,20 @@ function hash(x: number, y: number, s = 0) {
   return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
 }
 
-// Lotus emblem, sampled from the traced bitmap. Emblem box in cells: ex, ey, ew, eh.
+// Emblem: the app's VT mark, sampled from its bitmap. Box in cells: ex, ey, ew, eh.
 let ex = 0, ey = 0, ew = 1, eh = 1;
-function inLotus(x: number, y: number) {
+function kind(x: number, y: number) {
   const u = (x - ex) / ew, v = (y - ey) / eh;
-  if (u < 0 || u >= 1 || v < 0 || v >= 1) return false;
-  return LOTUS[Math.floor(v * LOTUS.length)][Math.floor(u * LOTUS_W)] === 1;
+  if (u < 0 || u >= 1 || v < 0 || v >= 1) return 0;
+  return MARK[Math.floor(v * MARK.length)][Math.floor(u * MARK_W)];
 }
-// Outline bright, body dimmer: reads as the logo at any size.
-function lotus(x: number, y: number) {
-  if (!inLotus(x, y)) return 0;
-  const edge = !inLotus(x - 1, y) || !inLotus(x + 1, y) || !inLotus(x, y - 1) || !inLotus(x, y + 1);
-  return edge ? 1 : 0.7 + hash(x, y, 5) * 0.1;
-}
-
-// Hexagonal web: concentric hexagons and their six vertex spokes, slowly turning.
-function hexWeb(dx: number, dy: number, t: number) {
-  const th = t * 0.12, c = Math.cos(th), s = Math.sin(th);
-  const rx = dx * c - dy * s, ry = dx * s + dy * c;
-  const d = Math.max(Math.abs(rx) * 0.866 + Math.abs(ry) * 0.5, Math.abs(ry));
-  const ring = Math.abs(((d / 10) % 1) - 0.5) * 2;
-  const spoke = Math.abs((((Math.atan2(ry, rx) / (Math.PI / 3)) % 1) + 1) % 1 - 0.5) * 2;
-  return { d, ring, spoke };
+// Outline bright, body dimmer, trace line faint.
+function mark(x: number, y: number) {
+  const k = kind(x, y);
+  if (k === 0) return { v: 0, k };
+  if (k === 3) return { v: 0.35, k };
+  const edge = kind(x - 1, y) !== k || kind(x + 1, y) !== k || kind(x, y - 1) !== k || kind(x, y + 1) !== k;
+  return { v: edge ? 1 : 0.7 + hash(x, y, 5) * 0.1, k };
 }
 
 function frame(now: number) {
@@ -74,7 +66,7 @@ function frame(now: number) {
   ctx.font = `${CH - 2}px ${getComputedStyle(document.documentElement).getPropertyValue("--mono")}`;
   ctx.textBaseline = "top";
 
-  const cx = cols / 2, cy = ey + eh * 0.55;
+  const cx = cols / 2, cy = ey + eh * 0.45;
   const reveal = Math.min(1, p * 1.6);         // emblem builds up over the first ~60%
   const rays = Math.min(1, Math.max(0, (p - 0.1) / 0.7));
   const maxR = Math.hypot(cols, rows);
@@ -82,23 +74,27 @@ function frame(now: number) {
   for (let y = 0; y < rows; y++) {
     for (let x = 0; x < cols; x++) {
       const dx = x - cx, dy = (y - cy) * (CH / CW);
+      const r = Math.hypot(dx, dy);
+      const ang = Math.atan2(dy, dx);
 
-      // Emblem, built from the base upwards; the crimson front scrambles before it settles.
-      let v = lotus(x, y);
+      // Emblem, built from the base upwards; the front scrambles before it settles.
+      const m = mark(x, y);
+      let v = m.v;
       let front = false;
       if (v > 0) {
         const rise = (ey + eh - y) / eh;
         if (rise > reveal) v = 0;
         else front = reveal < 1 && reveal - rise < 0.05;
       }
-      const crimson = front;
+      const crimson = m.k === 2 || front;
 
-      // Hexagonal web, growing outward over time, kept off the emblem
+      // Radial web: 12 spokes + concentric rings, drawn outward over time
       let web = 0;
-      const hx = hexWeb(dx, dy, t);
-      if (hx.d / maxR < rays && v === 0 && !inLotus(x, y)) {
-        if (hx.spoke > 0.96) web = 0.3;
-        if (hx.ring > 0.92 && hash(x, y, 3) > 0.25) web = 0.28;
+      const spoke = Math.abs(((ang / (Math.PI / 6)) % 1 + 1) % 1 - 0.5) * 2; // 0 at spoke
+      const ring = Math.abs(((r / 9) % 1) - 0.5) * 2;
+      if (r / maxR < rays && m.k === 0 && r > ew * 0.62) {
+        if (spoke > 0.96) web = 0.28;
+        if (ring > 0.97 && hash(x, y, 3) > 0.35) web = 0.22;
       }
 
       // Drifting rain
@@ -134,9 +130,9 @@ function resize() {
   c.height = window.innerHeight;
   cols = Math.ceil(c.width / CW);
   rows = Math.ceil(c.height / CH);
-  // Emblem: a third of the width (at most 120 cells), true aspect, a bit above centre.
-  ew = Math.min(cols * 0.34, 120);
-  eh = (ew * CW) / LOTUS_ASPECT / CH;
+  // Emblem: about a fifth of the width (at most 52 cells), true aspect, a bit above centre.
+  ew = Math.min(cols * 0.2, 52);
+  eh = (ew * CW) / MARK_ASPECT / CH;
   ex = (cols - ew) / 2;
   ey = rows * 0.44 - eh / 2;
 }
@@ -162,9 +158,9 @@ onBeforeUnmount(() => {
     <canvas ref="canvas"></canvas>
     <pre class="meta">VoidTrace/INTRO · sequence
 mode ........... {{ mode.toUpperCase() }} · decorative only
-emblem ......... lotus · ascii
-web ............ hexagonal · rotating
-marker ......... build line · crimson</pre>
+emblem ......... vt mark · ascii
+web ............ 12 spokes · radial
+marker ......... wedge · crimson</pre>
     <div class="cta" :class="{ show: finished }">
       <div class="hint">PRESS ANY KEY TO CONTINUE</div>
       <button class="btn" @click.stop="finish">Open dashboard</button>

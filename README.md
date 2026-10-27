@@ -120,4 +120,4 @@ src/               Vue: intro, setup, tabs, dialogs, overlay page
 ---
 
 <sub>VoidTrace is a fan project and not affiliated with or endorsed by Digital Extremes.
-Warframe and the Lotus emblem are trademarks of Digital Extremes Ltd. · MIT licensed.</sub>
+Warframe is a trademark of Digital Extremes Ltd. · MIT licensed.</sub>
