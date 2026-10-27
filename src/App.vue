@@ -6,6 +6,7 @@ import Intro from "./intro/Intro.vue";
 import TradeDialog from "./components/TradeDialog.vue";
 import NewListing from "./components/NewListing.vue";
 import Setup from "./components/Setup.vue";
+import { installUpdate, startUpdateChecks, updates } from "./updates";
 import Foundry from "./views/Foundry.vue";
 import Inventory from "./views/Inventory.vue";
 import Mastery from "./views/Mastery.vue";
@@ -54,6 +55,7 @@ onMounted(async () => {
   tick();
   version.value = (await getVersion()).replace(/\.0$/, "");
   setup.value = (await api.getSetting("setup_done")) !== "1";
+  startUpdateChecks();
   api.on("ready", refresh);
   api.on<GameEvent>("game-event", (e) => {
     if (e.kind === "game_focus") return;
@@ -87,11 +89,18 @@ onMounted(async () => {
     </main>
   </div>
   <Setup v-if="!intro && setup" @done="setupDone" />
+  <div v-if="updates.available && !updates.dismissed && !intro" class="upd card">
+    <span><b>VoidTrace {{ updates.available.version }}</b> is out</span>
+    <button class="btn primary" :disabled="updates.installing" @click="installUpdate">{{ updates.installing ? `Installing ${Math.round(updates.progress * 100)}%` : "Install & restart" }}</button>
+    <button class="btn" :disabled="updates.installing" @click="updates.dismissed = true">Later</button>
+    <span v-if="updates.error" class="error">{{ updates.error }}</span>
+  </div>
   <TradeDialog v-if="tradePrompt" />
   <NewListing v-if="listingPrompt" />
 </template>
 
 <style scoped>
+.upd { position: fixed; right: 16px; bottom: 16px; z-index: 40; display: flex; gap: 12px; align-items: center; max-width: calc(100vw - 32px); flex-wrap: wrap; border-color: var(--accent); }
 .shell { opacity: 0; }
 .shell.boot { animation: boot .5s steps(6) forwards; }
 @keyframes boot { from { opacity: 0; } to { opacity: 1; } }

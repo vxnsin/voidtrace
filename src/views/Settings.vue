@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
 import { api, type Status } from "../api";
+import { getVersion } from "@tauri-apps/api/app";
+import { checkForUpdate, installUpdate, updates } from "../updates";
 
 defineProps<{ status: Status | null }>();
 const emit = defineEmits(["refresh"]);
@@ -13,6 +15,12 @@ function setIntro(m: "full" | "quick" | "off") {
 }
 const launchWithGame = ref(false);
 async function rerunSetup() { await api.setSetting("setup_done", "0"); window.location.reload(); }
+const version = ref("");
+const autoUpdate = ref(true);
+const checked = ref(false);
+async function toggleAutoUpdate() { autoUpdate.value = !autoUpdate.value; await api.setSetting("update_auto", autoUpdate.value ? "1" : "0"); }
+async function checkNow() { await checkForUpdate(); checked.value = true; }
+onMounted(async () => { version.value = await getVersion(); autoUpdate.value = (await api.getSetting("update_auto")) !== "0"; });
 async function toggleLaunch() {
   try {
     await api.setLaunchWithGame(!launchWithGame.value);
@@ -67,6 +75,18 @@ onMounted(load);
     <label class="row" style="margin-top:10px"><input type="checkbox" :checked="launchWithGame" @change="toggleLaunch" /> Launch with Warframe</label>
     <p class="muted" style="margin:6px 0 0">Starts hidden in the tray when you sign in to Windows and opens as soon as Warframe starts. Closing the window keeps it in the tray; quit from the tray icon.</p>
   </div>
+  <div class="card" style="margin-bottom:12px">
+    <h2 style="margin-top:0">Updates</h2>
+    <div class="row">
+      <span class="muted">Installed v{{ version }}</span>
+      <button class="btn" :disabled="updates.checking" @click="checkNow">{{ updates.checking ? "Checking…" : "Check now" }}</button>
+      <button v-if="updates.available" class="btn primary" :disabled="updates.installing" @click="installUpdate">{{ updates.installing ? `Installing ${Math.round(updates.progress * 100)}%` : `Install v${updates.available.version} & restart` }}</button>
+      <span v-else-if="checked && !updates.error" class="ok">Up to date.</span>
+      <span v-if="updates.error" class="error">{{ updates.error }}</span>
+    </div>
+    <pre v-if="updates.available?.body" class="notes">{{ updates.available.body }}</pre>
+    <label class="row" style="margin-top:10px"><input type="checkbox" :checked="autoUpdate" @change="toggleAutoUpdate" /> Check GitHub for new releases on start and every few hours</label>
+  </div>
   <div class="card">
     <h2 style="margin-top:0">Overlay</h2>
     <label class="row"><input type="checkbox" v-model="overlay" /> Show relic reward overlay automatically</label>
@@ -107,3 +127,7 @@ onMounted(load);
     <span :class="msg.startsWith('Saved') || msg.includes('refreshed') ? 'ok' : 'muted'">{{ msg }}</span>
   </div>
 </template>
+
+<style scoped>
+.notes { white-space: pre-wrap; margin: 10px 0 0; color: var(--fg2); font: inherit; max-height: 200px; overflow: auto; }
+</style>
