@@ -25,6 +25,8 @@ pub enum GameEvent {
     /// The game just received the inventory document (login or loading screen);
     /// it is intact in memory right now. `size` is the body size the log reports.
     InventoryReceived { size: u64 },
+    /// The riven cycling screen opened ("OmegaRerollSelection.lua: Diorama setup").
+    RivenScreen,
     /// The relic selection screen before a fissure (pattern `relic_select`;
     /// empty until the line is known from a real EE.log).
     RelicSelect,
@@ -49,6 +51,8 @@ pub struct Patterns {
     pub relic_opened: String,
     #[serde(default = "default_inventory_received")]
     pub inventory_received: String,
+    #[serde(default = "default_riven_screen")]
+    pub riven_screen: String,
     /// Empty = off.
     #[serde(default)]
     pub relic_select: String,
@@ -71,6 +75,7 @@ impl Default for Patterns {
             // Last relic loaded before the fissure; refinement suffix stripped.
             relic_opened: r"Projections/(T\dVoidProjection\w+?)(?:Bronze|Silver|Gold|Platinum)\)".into(),
             inventory_received: default_inventory_received(),
+            riven_screen: default_riven_screen(),
             relic_select: String::new(),
         }
     }
@@ -85,6 +90,7 @@ struct Compiled {
     trade_complete: Regex,
     relic_opened: Regex,
     inventory_received: Regex,
+    riven_screen: Regex,
     relic_select: Option<Regex>,
 }
 
@@ -99,6 +105,7 @@ impl Compiled {
             trade_complete: Regex::new(&p.trade_complete)?,
             relic_opened: Regex::new(&p.relic_opened)?,
             inventory_received: Regex::new(&p.inventory_received)?,
+            riven_screen: Regex::new(&p.riven_screen)?,
             relic_select: if p.relic_select.trim().is_empty() { None } else { Some(Regex::new(&p.relic_select)?) },
         })
     }
@@ -124,6 +131,9 @@ impl Compiled {
         }
         if self.relic_select.as_ref().is_some_and(|r| r.is_match(line)) {
             return Some(GameEvent::RelicSelect);
+        }
+        if self.riven_screen.is_match(line) {
+            return Some(GameEvent::RivenScreen);
         }
         if let Some(c) = self.inventory_received.captures(line) {
             return Some(GameEvent::InventoryReceived { size: c[1].parse().unwrap_or(0) });
@@ -222,4 +232,10 @@ pub fn spawn_tailer(
 /// inventory.php response arrives, at login and on loading screens.
 fn default_inventory_received() -> String {
     r"OnInventoryResults, body size=(\d+)".into()
+}
+
+/// Verified: "Script [Info]: OmegaRerollSelection.lua: Diorama setup" when the riven
+/// cycling screen is up (the card with its stats is on screen from then on).
+fn default_riven_screen() -> String {
+    r"OmegaRerollSelection\.lua: Diorama setup".into()
 }

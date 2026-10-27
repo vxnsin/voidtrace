@@ -1030,6 +1030,9 @@ async fn riven_scan_inner(app: &AppHandle) -> anyhow::Result<RivenScan> {
     let crop = Crop { x: 0.0, y: 0.0, w: 1.0, h: 1.0 };
     let (w, h, bgra) = tokio::task::spawn_blocking(move || wfc_core::ocr::capture_crop(crop)).await??;
     let lines = tokio::task::spawn_blocking(move || wfc_core::ocr::recognize(w, h, &bgra)).await??;
+    if wfc_core::riven_ocr::parse(&ex, &weapons, &lines).is_none() {
+        tracing::debug!("riven ocr lines: {:?}", lines);
+    }
     let card = wfc_core::riven_ocr::parse(&ex, &weapons, &lines)
         .ok_or_else(|| anyhow::anyhow!("no riven card found on screen (open the riven's details in the mod station or cycling screen)"))?;
     let grade = wfc_core::riven::grade(&ex, &card.weapon, &card.stats);
@@ -1055,3 +1058,4 @@ async fn riven_scan_inner(app: &AppHandle) -> anyhow::Result<RivenScan> {
 pub async fn riven_scan(app: AppHandle) -> R<RivenScan> {
     riven_scan_inner(&app).await.map_err(err)
 }
+

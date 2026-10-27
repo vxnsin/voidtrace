@@ -42,3 +42,9 @@ fn mission_start_line() {
         Some("SolNode409")
     );
 }
+
+#[test]
+fn riven_screen_line() {
+    let p = Patterns::default();
+    assert!(cap(&p.riven_screen, "2283.865 Script [Info]: OmegaRerollSelection.lua: Diorama setup").is_some());
+}

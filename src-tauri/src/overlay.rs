@@ -314,6 +314,16 @@ pub async fn on_event(app: &AppHandle, ev: GameEvent) {
             show(app);
         }
         // The document is intact the moment the game logs it; scan at once, retry quickly.
+        // Riven cycling screen: read the card once it has faded in.
+        GameEvent::RivenScreen => {
+            if st.db.get("riven_auto").as_deref() != Some("0") {
+                let app = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    tokio::time::sleep(std::time::Duration::from_millis(1800)).await;
+                    crate::commands::riven_scan_now(&app).await;
+                });
+            }
+        }
         GameEvent::InventoryReceived { size } => {
             tracing::info!("inventory document received ({size} bytes), scanning");
             auto_sync(app, 300, 1000);
@@ -351,3 +361,4 @@ pub async fn on_event(app: &AppHandle, ev: GameEvent) {
         _ => {}
     }
 }
+
