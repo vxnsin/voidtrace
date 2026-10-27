@@ -1,4 +1,5 @@
 mod commands;
+mod dashboard;
 mod diag;
 mod notify;
 mod overlay;
@@ -168,6 +169,7 @@ pub fn run() {
                 show_main(&handle);
             }
 
+            wfc_core::set_ee_log_override(st.db.get("ee_log_path").filter(|p| !p.trim().is_empty()).map(std::path::PathBuf::from));
             // EE.log tailer.
             let patterns = st
                 .db
@@ -306,6 +308,9 @@ pub fn run() {
             commands::riven_search,
             commands::riven_snipes,
             commands::set_riven_snipes,
+            commands::dashboard_start,
+            commands::dashboard_stop,
+            commands::dashboard_status,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

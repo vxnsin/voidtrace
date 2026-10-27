@@ -964,3 +964,19 @@ pub fn riven_snipes(st: State<AppState>) -> Vec<crate::watch::RivenSnipe> {
 pub fn set_riven_snipes(st: State<AppState>, snipes: Vec<crate::watch::RivenSnipe>) -> R<()> {
     st.db.set("riven_snipes", &serde_json::to_string(&snipes).map_err(err)?).map_err(err)
 }
+// ---- Phone dashboard (#17) ----
+
+#[tauri::command]
+pub async fn dashboard_start(app: AppHandle, st: State<'_, AppState>) -> R<crate::dashboard::DashInfo> {
+    let port = st.db.get("dashboard_port").and_then(|p| p.parse().ok()).unwrap_or(47811);
+    crate::dashboard::start(&app, port).await.map_err(err)
+}
+#[tauri::command]
+pub fn dashboard_stop(app: AppHandle) -> crate::dashboard::DashInfo {
+    crate::dashboard::stop(&app);
+    crate::dashboard::info()
+}
+#[tauri::command]
+pub fn dashboard_status() -> crate::dashboard::DashInfo {
+    crate::dashboard::info()
+}

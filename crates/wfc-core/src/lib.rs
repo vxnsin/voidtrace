@@ -34,11 +34,33 @@ pub fn data_dir() -> PathBuf {
     dir
 }
 
+static EE_LOG_OVERRIDE: parking_lot::RwLock<Option<PathBuf>> = parking_lot::RwLock::new(None);
+
+/// A path from the settings wins over the detected one (Linux setups differ).
+pub fn set_ee_log_override(p: Option<PathBuf>) {
+    *EE_LOG_OVERRIDE.write() = p;
+}
+
 pub fn ee_log_path() -> PathBuf {
-    dirs::data_local_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("Warframe")
-        .join("EE.log")
+    if let Some(p) = EE_LOG_OVERRIDE.read().clone() {
+        return p;
+    }
+    #[cfg(windows)]
+    {
+        dirs::data_local_dir().unwrap_or_else(|| PathBuf::from(".")).join("Warframe").join("EE.log")
+    }
+    #[cfg(not(windows))]
+    {
+        // Warframe runs through Proton: the log is inside the game's prefix.
+        let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
+        let prefix = "steamapps/compatdata/230410/pfx/drive_c/users/steamuser/AppData/Local/Warframe/EE.log";
+        let candidates = [
+            home.join(".steam/steam").join(prefix),
+            home.join(".local/share/Steam").join(prefix),
+            home.join(".var/app/com.valvesoftware.Steam/.local/share/Steam").join(prefix),
+        ];
+        candidates.iter().find(|p| p.exists()).cloned().unwrap_or_else(|| candidates[0].clone())
+    }
 }
 
 /// Normalise an item name for fuzzy matching: lowercase, strip non-alnum.

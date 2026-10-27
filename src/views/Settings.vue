@@ -6,6 +6,7 @@ import { checkForUpdate, installUpdate, updates } from "../updates";
 import ThemeCard from "../components/ThemeCard.vue";
 import DiscordCard from "../components/DiscordCard.vue";
 import DataCard from "../components/DataCard.vue";
+import PhoneCard from "../components/PhoneCard.vue";
 
 defineProps<{ status: Status | null }>();
 const emit = defineEmits(["refresh"]);
@@ -57,6 +58,7 @@ async function toggleLaunch() {
 const rawLog = ref(false);
 const crop = ref({ x: 0.18, y: 0.4, w: 0.64, h: 0.14 });
 const patterns = ref("");
+const eeLogPath = ref("");
 const msg = ref("");
 const busy = ref(false);
 
@@ -67,12 +69,14 @@ async function load() {
   rawLog.value = (await api.getSetting("log_raw")) === "1";
   const c = await api.getSetting("ocr_crop"); if (c) crop.value = JSON.parse(c);
   patterns.value = (await api.getSetting("log_patterns")) ?? "";
+  eeLogPath.value = (await api.getSetting("ee_log_path")) ?? "";
 }
 async function save() {
   await api.setSetting("memory_sync", memorySync.value ? "1" : "0");
   await api.setSetting("log_raw", rawLog.value ? "1" : "0");
   await api.setSetting("ocr_crop", JSON.stringify(crop.value));
   if (patterns.value.trim()) await api.setSetting("log_patterns", patterns.value);
+  await api.setSetting("ee_log_path", eeLogPath.value.trim());
   msg.value = "Saved. Log pattern changes apply after restart.";
 }
 async function refresh() {
@@ -88,6 +92,7 @@ onMounted(load);
   <ThemeCard style="margin-bottom:12px" />
   <DiscordCard style="margin-bottom:12px" />
   <DataCard style="margin-bottom:12px" />
+  <PhoneCard style="margin-bottom:12px" />
   <div class="card" style="margin-bottom:12px">
     <h2 style="margin-top:0">Startup</h2>
     <div class="row">
@@ -157,6 +162,8 @@ onMounted(load);
   <div class="card" style="margin-top:12px">
     <h2 style="margin-top:0">Game log</h2>
     <p class="muted">Reading <code>{{ status?.ee_log }}</code> — {{ status?.ee_log_exists ? "found" : "not found (start Warframe once)" }}</p>
+    <label class="row"><span class="muted">EE.log path</span><input v-model="eeLogPath" placeholder="detected automatically" style="flex:1;min-width:320px" /></label>
+    <p class="muted">Only needed when the log is somewhere unusual (Linux with a custom Steam library). Applies after restart.</p>
     <label class="row"><input type="checkbox" v-model="rawLog" /> Forward every log line as an event (debugging)</label>
     <p class="muted">Regex overrides (JSON with keys logged_in, mission_start, mission_end, reward_screen, reward_done, trade_complete, relic_opened, relic_select). Leave empty for defaults.</p>
     <textarea v-model="patterns" rows="4" style="width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:inherit;padding:8px;font-family:monospace"></textarea>
