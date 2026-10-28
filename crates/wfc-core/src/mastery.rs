@@ -74,7 +74,10 @@ pub fn summary(ex: &Export, profile: Option<&Profile>) -> MasterySummary {
     let mastered = items.iter().filter(|i| i.mastered).count();
     let points: u32 = items.iter().map(|i| i.mastery_points).sum();
     let points_available: u32 = items.iter().map(|i| curve_pts(i)).sum();
-    MasterySummary { total: items.len(), mastered, points, points_available, rank: mr_from_points(points), items }
+    // The account's real rank comes with the profile; item XP alone misses star chart,
+    // junctions, intrinsics and some item kinds, so it is only the fallback.
+    let rank = profile.map(|p| p.player_level).filter(|l| *l > 0).unwrap_or_else(|| mr_from_points(points));
+    MasterySummary { total: items.len(), mastered, points, points_available, rank, items }
 }
 
 fn curve_pts(i: &MasteryItem) -> u32 {
