@@ -553,3 +553,29 @@ mod stitch_tests {
         assert_eq!(got, doc.to_vec());
     }
 }
+
+/// The account id the game sends with its requests ("accountId=<24 hex>"),
+/// most frequent one wins. Same read-only scan as the inventory.
+#[cfg(windows)]
+pub fn find_account_id() -> Option<String> {
+    let mut counts: std::collections::HashMap<Vec<u8>, usize> = Default::default();
+    walk_memory(|_, buf| {
+        for key in [&b"accountId="[..], &b"\"accountId\":\""[..]] {
+            for pos in memchr::memmem::find_iter(buf, key) {
+                let s = pos + key.len();
+                if let Some(id) = buf.get(s..s + 24) {
+                    if id.iter().all(|c| c.is_ascii_hexdigit()) {
+                        *counts.entry(id.to_vec()).or_default() += 1;
+                    }
+                }
+            }
+        }
+    })
+    .ok()?;
+    counts.into_iter().max_by_key(|(_, n)| *n).map(|(id, _)| String::from_utf8_lossy(&id).to_lowercase())
+}
+
+#[cfg(not(windows))]
+pub fn find_account_id() -> Option<String> {
+    None
+}

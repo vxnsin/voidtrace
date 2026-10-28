@@ -319,7 +319,7 @@ pub async fn on_event(app: &AppHandle, ev: GameEvent) {
             if st.db.get("riven_auto").as_deref() != Some("0") {
                 let app = app.clone();
                 tauri::async_runtime::spawn(async move {
-                    tokio::time::sleep(std::time::Duration::from_millis(1800)).await;
+                    tokio::time::sleep(std::time::Duration::from_millis(700)).await;
                     crate::commands::riven_scan_now(&app).await;
                 });
             }
@@ -327,6 +327,16 @@ pub async fn on_event(app: &AppHandle, ev: GameEvent) {
         GameEvent::InventoryReceived { size } => {
             tracing::info!("inventory document received ({size} bytes), scanning");
             auto_sync(app, 300, 1000);
+            // Account id for the profile endpoint, read once while the game is up.
+            if st.db.get("memory_sync").as_deref() == Some("1") && st.db.get("player_id").map_or(true, |v| v.is_empty()) {
+                let app = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    if let Ok(Some(id)) = tokio::task::spawn_blocking(wfc_core::memory::find_account_id).await {
+                        tracing::info!("account id read from the game");
+                        let _ = app.state::<AppState>().db.set("player_id", &id);
+                    }
+                });
+            }
         }
         // Fallback for logs without the OnInventoryResults line.
         GameEvent::MissionEnd => {

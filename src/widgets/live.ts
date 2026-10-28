@@ -87,7 +87,8 @@ export function startLive() {
     live.riven = r;
     live.showRiven = true;
     clearTimeout(rivenTimer);
-    rivenTimer = setTimeout(() => (live.showRiven = false), 120000);
+    // The backend closes the panel when the card leaves the screen; this is only a safety net.
+    rivenTimer = setTimeout(() => (live.showRiven = false), 600000);
   });
   api.on("riven-done", () => (live.showRiven = false));
   api.on<GameEvent>("game-event", onGame);

@@ -229,6 +229,10 @@ pub fn run() {
                 }
             }
             connect_ws(&handle);
+            {
+                let h = handle.clone();
+                tauri::async_runtime::spawn(async move { commands::prefetch_riven_weapons(&h).await });
+            }
             watch::spawn(&handle);
             watch::spawn_sniper(&handle);
             Ok(())

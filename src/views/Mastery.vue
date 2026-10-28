@@ -48,9 +48,8 @@ onMounted(async () => {
       <button class="btn primary" :disabled="busy || playerId.length !== 24" @click="load(true)">{{ busy ? "Loading…" : "Load profile" }}</button>
     </div>
     <p class="muted" style="margin:8px 0 0">
-      DE's profile endpoint needs your account id since U38.0.8, not the name. Log in at warframe.com, open
-      <code>www.warframe.com/api/user-data</code> and copy the value of <code>user_id</code>. Profile must be public
-      in game options. Don't spam this: bad ids or many requests get your IP blocked by DE for a while.
+      DE's profile endpoint needs your account id (24 hex characters), not the name. With Inventory sync on,
+      VoidTrace reads it from the game at the next login and fills it in here. Profile must be public in game options. Don't spam this: bad ids or many requests get your IP blocked by DE for a while.
     </p>
   </div>
   <p v-if="err" class="error">{{ err }}</p>

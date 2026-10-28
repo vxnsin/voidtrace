@@ -78,6 +78,7 @@ const close = () => (live.showRiven = false);
             <div class="dim foot">{{ a.rerolls }} rolls · MR {{ a.mastery }}</div>
           </div>
         </div>
+        <div v-else-if="r.loading" class="dim">Loading listings…</div>
         <div v-else class="dim">No similar listings online right now.</div>
 
         <div class="h row">

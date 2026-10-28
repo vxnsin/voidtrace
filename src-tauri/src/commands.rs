@@ -987,7 +987,7 @@ pub fn dashboard_status() -> crate::dashboard::DashInfo {
     crate::dashboard::info()
 }
 
-// ---- Riven overlay (hotkey) ----
+// ---- Riven overlay (hotkey / cycling screen) ----
 
 #[derive(Serialize, Clone)]
 pub struct RivenPriceSummary {
@@ -1005,72 +1005,169 @@ pub struct RivenScan {
     pub similar: Vec<wfc_core::riven::RivenAuction>,
     pub prices: RivenPriceSummary,
     pub suggest: wfc_core::riven_ocr::Suggest,
+    /// Listings are still being fetched; the card part is already final.
+    pub loading: bool,
 }
 
-/// Read the riven card on screen (OCR), grade it, pull similar auctions and
-/// general roll advice, and show it in the riven widget. Bound to a hotkey.
-pub async fn riven_scan_now(app: &AppHandle) {
-    match riven_scan_inner(app).await {
-        Ok(r) => {
-            use tauri::Emitter;
-            let _ = app.emit("riven", &r);
-            crate::overlay::show(app);
-        }
-        Err(e) => {
-            use tauri::Emitter;
-            tracing::warn!("riven scan: {e}");
-            let _ = app.emit("overlay-error", format!("riven: {e}"));
+type AuctionCache = std::collections::HashMap<String, (std::time::Instant, Vec<wfc_core::riven::RivenAuction>)>;
+static RIVEN_AUCTIONS: parking_lot::Mutex<Option<AuctionCache>> = parking_lot::Mutex::new(None);
+/// Bumped per scan; a running screen watcher stops when it no longer matches.
+static RIVEN_GEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+const AUCTION_TTL_SECS: u64 = 300;
+
+/// Load the riven weapon list once (startup), so the first scan doesn't wait for it.
+pub async fn prefetch_riven_weapons(app: &AppHandle) {
+    let st = app.state::<AppState>();
+    if RIVEN_WEAPONS.lock().is_empty() {
+        match wfc_core::riven::riven_weapons(&st.http).await {
+            Ok(list) => *RIVEN_WEAPONS.lock() = list,
+            Err(e) => tracing::warn!("riven weapons: {e}"),
         }
     }
 }
 
-async fn riven_scan_inner(app: &AppHandle) -> anyhow::Result<RivenScan> {
+fn cached_auctions(slug: &str) -> Option<Vec<wfc_core::riven::RivenAuction>> {
+    RIVEN_AUCTIONS
+        .lock()
+        .as_ref()?
+        .get(slug)
+        .filter(|(t, _)| t.elapsed().as_secs() < AUCTION_TTL_SECS)
+        .map(|(_, a)| a.clone())
+}
+
+/// OCR of the card only (cheap); the "Fits in" box is read only when the title
+/// can't be matched. `None` = no riven card on screen.
+async fn read_card(app: &AppHandle) -> anyhow::Result<Option<wfc_core::riven_ocr::RivenCard>> {
     use wfc_core::ocr::Crop;
     let st = app.state::<AppState>();
     let ex = st.export.read().clone().ok_or_else(|| anyhow::anyhow!("game data not loaded yet"))?;
     if RIVEN_WEAPONS.lock().is_empty() {
-        if let Ok(list) = wfc_core::riven::riven_weapons(&st.http).await {
-            *RIVEN_WEAPONS.lock() = list;
-        }
+        prefetch_riven_weapons(app).await;
     }
     let weapons: Vec<(String, String)> = RIVEN_WEAPONS.lock().iter().map(|w| (w.name.clone(), w.slug.clone())).collect();
-    // The card sits mid-screen; the whole screen is read so the title line is caught too.
-    // Only the card (centre) and the "Fits in" box (right), scaled up; full-screen OCR
-    // misses the card text and picks up whatever other overlay is on screen.
     let read = |crop: Crop| async move {
         let (w, h, px) = tokio::task::spawn_blocking(move || wfc_core::ocr::capture_text(crop, 2)).await??;
         tokio::task::spawn_blocking(move || wfc_core::ocr::recognize(w, h, &px)).await?
     };
     let card_lines = read(Crop { x: 0.40, y: 0.58, w: 0.20, h: 0.22 }).await?;
+    if let Some(c) = wfc_core::riven_ocr::parse_card(&ex, &weapons, &card_lines, &[]) {
+        return Ok(Some(c));
+    }
     let fits_lines = read(Crop { x: 0.82, y: 0.64, w: 0.16, h: 0.26 }).await.unwrap_or_default();
     let parsed = wfc_core::riven_ocr::parse_card(&ex, &weapons, &card_lines, &fits_lines);
     if parsed.is_none() {
         tracing::debug!("riven ocr card: {:?} fits in: {:?}", card_lines, fits_lines);
     }
-    let card = parsed
-        .ok_or_else(|| anyhow::anyhow!("no riven card found on screen (open the riven's details in the mod station or cycling screen)"))?;
+    Ok(parsed)
+}
+
+fn build_scan(app: &AppHandle, card: wfc_core::riven_ocr::RivenCard, auctions: Option<&[wfc_core::riven::RivenAuction]>) -> anyhow::Result<RivenScan> {
+    let st = app.state::<AppState>();
+    let ex = st.export.read().clone().ok_or_else(|| anyhow::anyhow!("game data not loaded yet"))?;
     let grade = wfc_core::riven::grade(&ex, &card.weapon, &card.stats);
     let (_, class) = wfc_core::riven::classify(&ex, &card.weapon);
     let suggest = wfc_core::riven_ocr::suggest(class);
-    let auctions = match &card.weapon_slug {
-        Some(slug) => wfc_core::riven::riven_auctions(&st.http, slug).await.unwrap_or_default(),
-        None => Vec::new(),
-    };
-    let similar = wfc_core::riven_ocr::similar(&card, &auctions, 2);
-    let mut prices: Vec<u32> = auctions.iter().filter_map(|a| a.buyout.or(Some(a.starting))).filter(|p| *p > 0).collect();
+    let list = auctions.unwrap_or(&[]);
+    let similar = wfc_core::riven_ocr::similar(&card, list, 2);
+    let mut prices: Vec<u32> = list.iter().filter_map(|a| a.buyout.or(Some(a.starting))).filter(|p| *p > 0).collect();
     prices.sort_unstable();
     let summary = RivenPriceSummary {
         min: prices.first().copied(),
         median: (!prices.is_empty()).then(|| prices[prices.len() / 2]),
         count: prices.len(),
     };
-    let _ = st.db.set("riven_last", &serde_json::to_string(&card).unwrap_or_default());
     let positives = card.stats.iter().filter(|s| !s.negative).filter_map(|s| wfc_core::riven_ocr::market_attr(&s.stat)).map(str::to_string).collect();
-    Ok(RivenScan { card, positives, grade, similar, prices: summary, suggest })
+    Ok(RivenScan { loading: auctions.is_none() && card.weapon_slug.is_some(), card, positives, grade, similar, prices: summary, suggest })
+}
+
+fn same_roll(a: &wfc_core::riven_ocr::RivenCard, b: &wfc_core::riven_ocr::RivenCard) -> bool {
+    a.weapon == b.weapon
+        && a.stats.len() == b.stats.len()
+        && a.stats.iter().zip(&b.stats).all(|(x, y)| x.stat == y.stat && x.negative == y.negative && (x.value - y.value).abs() < 0.05)
+}
+
+/// Show the card part at once, the listings when they arrive.
+async fn show_card(app: &AppHandle, gen: u64, card: wfc_core::riven_ocr::RivenCard) {
+    use tauri::Emitter;
+    let st = app.state::<AppState>();
+    let _ = st.db.set("riven_last", &serde_json::to_string(&card).unwrap_or_default());
+    let cached = card.weapon_slug.as_deref().and_then(cached_auctions);
+    if let Ok(scan) = build_scan(app, card.clone(), cached.as_deref()) {
+        let _ = app.emit("riven", &scan);
+    }
+    crate::overlay::show(app);
+    if cached.is_some() {
+        return;
+    }
+    let Some(slug) = card.weapon_slug.clone() else { return };
+    let list = wfc_core::riven::riven_auctions(&st.http, &slug).await.unwrap_or_default();
+    RIVEN_AUCTIONS
+        .lock()
+        .get_or_insert_with(Default::default)
+        .insert(slug, (std::time::Instant::now(), list.clone()));
+    if RIVEN_GEN.load(std::sync::atomic::Ordering::Relaxed) == gen {
+        if let Ok(scan) = build_scan(app, card, Some(&list)) {
+            let _ = app.emit("riven", &scan);
+        }
+    }
+}
+
+/// Read the riven card on screen, show it, then keep an eye on the screen:
+/// a new roll updates the panel, no riven card any more closes it.
+pub async fn riven_scan_now(app: &AppHandle) {
+    use std::sync::atomic::Ordering;
+    use tauri::Emitter;
+    let gen = RIVEN_GEN.fetch_add(1, Ordering::Relaxed) + 1;
+    let card = match read_card(app).await {
+        Ok(Some(c)) => c,
+        Ok(None) => {
+            tracing::warn!("riven scan: no riven card found on screen");
+            let _ = app.emit("overlay-error", "riven: no riven card on screen");
+            return;
+        }
+        Err(e) => {
+            tracing::warn!("riven scan: {e}");
+            let _ = app.emit("overlay-error", format!("riven: {e}"));
+            return;
+        }
+    };
+    let mut last = card.clone();
+    {
+        let app = app.clone();
+        tauri::async_runtime::spawn(async move { show_card(&app, gen, card).await });
+    }
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let mut misses = 0;
+        for _ in 0..600 {
+            tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
+            if RIVEN_GEN.load(Ordering::Relaxed) != gen {
+                return;
+            }
+            match read_card(&app).await {
+                Ok(Some(c)) => {
+                    misses = 0;
+                    if !same_roll(&c, &last) {
+                        last = c.clone();
+                        show_card(&app, gen, c).await;
+                    }
+                }
+                _ => {
+                    misses += 1;
+                    if misses >= 2 {
+                        let _ = app.emit("riven-done", ());
+                        return;
+                    }
+                }
+            }
+        }
+    });
 }
 
 #[tauri::command]
 pub async fn riven_scan(app: AppHandle) -> R<RivenScan> {
-    riven_scan_inner(&app).await.map_err(err)
+    let card = read_card(&app).await.map_err(err)?.ok_or("no riven card found on screen")?;
+    let cached = card.weapon_slug.as_deref().and_then(cached_auctions);
+    build_scan(&app, card, cached.as_deref()).map_err(err)
 }
 
