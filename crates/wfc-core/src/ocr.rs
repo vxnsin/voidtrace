@@ -121,3 +121,22 @@ pub async fn read_rewards(market: &Market, crop: Crop) -> Result<Vec<RewardHit>>
     }
     Ok(hits)
 }
+
+/// Crop, scale up and boost contrast for small light-on-dark game text (riven
+/// card, "Fits in" box): the OCR engine misses it at native size over the glow.
+pub fn capture_text(crop: Crop, scale: u32) -> Result<(u32, u32, Vec<u8>)> {
+    let (w, h, bgra) = capture_crop(crop)?;
+    let (sw, sh) = (w * scale, h * scale);
+    let mut out = vec![0u8; (sw * sh * 4) as usize];
+    for y in 0..sh {
+        for x in 0..sw {
+            let s = (((y / scale) * w + x / scale) * 4) as usize;
+            // Luma, inverted, with a hard knee: dark text on white reads best.
+            let l = (0.114 * bgra[s] as f32 + 0.587 * bgra[s + 1] as f32 + 0.299 * bgra[s + 2] as f32) as i32;
+            let v = if l > 150 { 0 } else if l < 90 { 255 } else { (255 - (l - 90) * 255 / 60).clamp(0, 255) } as u8;
+            let d = ((y * sw + x) * 4) as usize;
+            out[d..d + 4].copy_from_slice(&[v, v, v, 255]);
+        }
+    }
+    Ok((sw, sh, out))
+}

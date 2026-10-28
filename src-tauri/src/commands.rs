@@ -999,6 +999,8 @@ pub struct RivenPriceSummary {
 #[derive(Serialize, Clone)]
 pub struct RivenScan {
     pub card: wfc_core::riven_ocr::RivenCard,
+    /// warframe.market url_names of the card's positive stats, for the match % per listing.
+    pub positives: Vec<String>,
     pub grade: wfc_core::riven::RivenGrade,
     pub similar: Vec<wfc_core::riven::RivenAuction>,
     pub prices: RivenPriceSummary,
@@ -1033,13 +1035,19 @@ async fn riven_scan_inner(app: &AppHandle) -> anyhow::Result<RivenScan> {
     }
     let weapons: Vec<(String, String)> = RIVEN_WEAPONS.lock().iter().map(|w| (w.name.clone(), w.slug.clone())).collect();
     // The card sits mid-screen; the whole screen is read so the title line is caught too.
-    let crop = Crop { x: 0.0, y: 0.0, w: 1.0, h: 1.0 };
-    let (w, h, bgra) = tokio::task::spawn_blocking(move || wfc_core::ocr::capture_crop(crop)).await??;
-    let lines = tokio::task::spawn_blocking(move || wfc_core::ocr::recognize(w, h, &bgra)).await??;
-    if wfc_core::riven_ocr::parse(&ex, &weapons, &lines).is_none() {
-        tracing::debug!("riven ocr lines: {:?}", lines);
+    // Only the card (centre) and the "Fits in" box (right), scaled up; full-screen OCR
+    // misses the card text and picks up whatever other overlay is on screen.
+    let read = |crop: Crop| async move {
+        let (w, h, px) = tokio::task::spawn_blocking(move || wfc_core::ocr::capture_text(crop, 2)).await??;
+        tokio::task::spawn_blocking(move || wfc_core::ocr::recognize(w, h, &px)).await?
+    };
+    let card_lines = read(Crop { x: 0.40, y: 0.58, w: 0.20, h: 0.22 }).await?;
+    let fits_lines = read(Crop { x: 0.82, y: 0.64, w: 0.16, h: 0.26 }).await.unwrap_or_default();
+    let parsed = wfc_core::riven_ocr::parse_card(&ex, &weapons, &card_lines, &fits_lines);
+    if parsed.is_none() {
+        tracing::debug!("riven ocr card: {:?} fits in: {:?}", card_lines, fits_lines);
     }
-    let card = wfc_core::riven_ocr::parse(&ex, &weapons, &lines)
+    let card = parsed
         .ok_or_else(|| anyhow::anyhow!("no riven card found on screen (open the riven's details in the mod station or cycling screen)"))?;
     let grade = wfc_core::riven::grade(&ex, &card.weapon, &card.stats);
     let (_, class) = wfc_core::riven::classify(&ex, &card.weapon);
@@ -1057,7 +1065,8 @@ async fn riven_scan_inner(app: &AppHandle) -> anyhow::Result<RivenScan> {
         count: prices.len(),
     };
     let _ = st.db.set("riven_last", &serde_json::to_string(&card).unwrap_or_default());
-    Ok(RivenScan { card, grade, similar, prices: summary, suggest })
+    let positives = card.stats.iter().filter(|s| !s.negative).filter_map(|s| wfc_core::riven_ocr::market_attr(&s.stat)).map(str::to_string).collect();
+    Ok(RivenScan { card, positives, grade, similar, prices: summary, suggest })
 }
 
 #[tauri::command]

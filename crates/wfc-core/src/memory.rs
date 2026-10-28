@@ -137,14 +137,29 @@ pub fn read_inventory_json() -> Result<serde_json::Value> {
                     let Some((base, len)) = queue.lock().unwrap().next() else { return };
                     buf.clear();
                     buf.resize(len, 0);
+                    // One call for the whole window fails entirely (ERROR_PARTIAL_COPY) as soon as a
+                    // single page in it is gone, which in a busy heap is most windows. Fall back to
+                    // 64 KB pieces and leave unreadable ones zeroed.
                     let mut got = 0usize;
                     let ok = unsafe {
                         ReadProcessMemory(hh.0, base as *const _, buf.as_mut_ptr() as *mut _, len, Some(&mut got)).is_ok()
                     };
-                    if !ok || got == 0 {
-                        continue;
+                    if !ok || got < len {
+                        const PIECE: usize = 64 << 10;
+                        let mut off = 0usize;
+                        while off < len {
+                            let n = PIECE.min(len - off);
+                            let mut g = 0usize;
+                            let ok = unsafe {
+                                ReadProcessMemory(hh.0, (base + off) as *const _, buf[off..].as_mut_ptr() as *mut _, n, Some(&mut g)).is_ok()
+                            };
+                            if !ok {
+                                buf[off..off + n].fill(0);
+                            }
+                            off += n;
+                        }
                     }
-                    if let Some(doc) = best_candidate(&buf[..got]) {
+                    if let Some(doc) = best_candidate(&buf) {
                         let mut f = found.lock().unwrap();
                         if f.as_ref().map(|(_, d)| d.len() < doc.len()).unwrap_or(true) {
                             *f = Some((base, doc));
@@ -295,12 +310,49 @@ fn best_candidate(buf: &[u8]) -> Option<Vec<u8>> {
             if !MUST_CONTAIN.iter().all(|k| memchr::memmem::find(cand, k).is_some()) {
                 continue;
             }
+            // A block header can sit inside a string, so brace matching alone is no proof.
+            if serde_json::from_slice::<serde::de::IgnoredAny>(cand).is_err() {
+                continue;
+            }
             if best.map(|b| b.len() < cand.len()).unwrap_or(true) {
                 best = Some(cand);
             }
         }
     }
-    best.map(|b| b.to_vec())
+    if let Some(b) = best {
+        return Some(b.to_vec());
+    }
+    // The copy the game keeps after parsing is split into blocks with short binary
+    // headers in between. Drop every non-printable byte around the anchor and try
+    // again; only a result that parses as JSON is accepted.
+    for anchor in ANCHORS {
+        for pos in memchr::memmem::find_iter(buf, anchor) {
+            if let Some(doc) = stitched(buf, pos) {
+                return Some(doc);
+            }
+        }
+    }
+    None
+}
+
+fn printable(b: u8) -> bool {
+    (0x20..0x7f).contains(&b) || b == 9 || b == 10 || b == 13
+}
+
+fn stitched(buf: &[u8], pos: usize) -> Option<Vec<u8>> {
+    const SPAN: usize = 4 << 20;
+    let lo = pos.saturating_sub(SPAN);
+    let hi = (pos + SPAN).min(buf.len());
+    let before = buf[lo..pos].iter().filter(|b| printable(**b)).count();
+    let clean: Vec<u8> = buf[lo..hi].iter().copied().filter(|b| printable(*b)).collect();
+    let start = find_start(&clean, before)?;
+    let end = match_object(&clean[start..])?;
+    let cand = &clean[start..start + end];
+    if !MUST_CONTAIN.iter().all(|k| memchr::memmem::find(cand, k).is_some()) {
+        return None;
+    }
+    serde_json::from_slice::<serde_json::Value>(cand).ok()?;
+    Some(cand.to_vec())
 }
 
 /// Walk backwards from a key at `pos` (which is at depth 1 inside the document)
@@ -482,4 +534,22 @@ pub fn focus_game() -> bool {
 #[cfg(not(windows))]
 pub fn focus_game() -> bool {
     false
+}
+
+#[cfg(test)]
+mod stitch_tests {
+    use super::*;
+
+    #[test]
+    fn stitches_blocks_split_by_binary_headers() {
+        let doc = br#"{"SubscribedToEmails":0,"MiscItems":[{"ItemType":"/a","ItemCount":1}],"Recipes":[],"XPInfo":[{"ItemType":"/b","XP":5}]}"#;
+        let (a, b) = doc.split_at(40);
+        let mut buf = vec![0u8; 64];
+        buf.extend_from_slice(a);
+        buf.extend_from_slice(&[0x00, 0x10, 0x97, 0xa1, 0x00, 0x00, 0x8f, 0x00]);
+        buf.extend_from_slice(b);
+        buf.extend_from_slice(&[0u8; 64]);
+        let got = best_candidate(&buf).expect("stitched");
+        assert_eq!(got, doc.to_vec());
+    }
 }

@@ -217,3 +217,78 @@ mod tests {
         assert_eq!((w.as_str(), s.as_deref(), n.as_str()), ("Akbolto", Some("akbolto"), "Conci-lexicon"));
     }
 }
+
+/// Card text plus the "Fits in" box. The card title wraps over two lines on the
+/// cycling screen ("Wolf Sledge Tempi-" / "loctiata"), so neighbouring lines are
+/// joined before the title is looked up; the "Fits in" weapon is the fallback.
+pub fn parse_card(ex: &Export, weapons: &[(String, String)], card: &[String], fits_in: &[String]) -> Option<RivenCard> {
+    let stats: Vec<StatInput> = card.iter().filter_map(|l| parse_stat(l)).take(4).collect();
+    if stats.len() < 2 {
+        return None;
+    }
+    // Lines above the first stat are the title.
+    let first_stat = card.iter().position(|l| parse_stat(l).is_some()).unwrap_or(card.len());
+    let title: String = card[..first_stat]
+        .iter()
+        .map(|l| l.trim())
+        .filter(|l| !l.is_empty())
+        .fold(String::new(), |acc, l| if acc.ends_with('-') || acc.is_empty() { acc + l } else { acc + " " + l });
+    let pairs = |list: &[String]| -> Vec<String> {
+        // The joined title first: on equal weapon matches the first line wins.
+        let mut v = vec![title.clone()];
+        v.extend_from_slice(list);
+        v
+    };
+    let known = |name: &str| -> Option<(String, Option<String>)> {
+        let n = crate::norm(name);
+        if weapons.is_empty() {
+            ex.weapons.iter().find(|w| crate::norm(&w.name) == n).map(|w| (w.name.clone(), None))
+        } else {
+            weapons.iter().find(|(w, _)| crate::norm(w) == n).map(|(w, s)| (w.clone(), Some(s.clone())))
+        }
+    };
+    let lines = pairs(card);
+    let from_title = if weapons.is_empty() {
+        parse_title(&lines, ex.weapons.iter().map(|w| (w.name.as_str(), None)))
+    } else {
+        parse_title(&lines, weapons.iter().map(|(n, s)| (n.as_str(), Some(s.as_str()))))
+    };
+    if let Some((weapon, weapon_slug, name)) = from_title {
+        return Some(RivenCard { weapon, weapon_slug, name, stats });
+    }
+    // "FITS IN" then the weapon name on the next line(s).
+    let idx = fits_in.iter().position(|l| crate::norm(l).contains("fits in"));
+    let candidates: Vec<&String> = match idx {
+        Some(i) => fits_in[i + 1..].iter().collect(),
+        None => fits_in.iter().collect(),
+    };
+    let (weapon, weapon_slug) = candidates.iter().find_map(|l| known(l))?;
+    let wl = weapon.to_ascii_lowercase();
+    let name = title
+        .to_ascii_lowercase()
+        .strip_prefix(&wl)
+        .map(|_| title[weapon.len()..].trim().to_string())
+        .unwrap_or_else(|| title.clone());
+    Some(RivenCard { weapon, weapon_slug, name, stats })
+}
+
+#[cfg(test)]
+mod card_tests {
+    use super::*;
+
+    #[test]
+    fn wrapped_title_and_fits_in() {
+        let ex = Export::default();
+        let weapons = vec![("Wolf Sledge".to_string(), "wolf_sledge".to_string())];
+        let card: Vec<String> = ["Wolf Sledge Tempi-", "loctiata", "+172,3% Melee Damage", "+9,2s Combo Duration", "+2,1 Range", "-50,2% Attack Speed", "MR 14"]
+            .iter().map(|s| s.to_string()).collect();
+        let c = parse_card(&ex, &weapons, &card, &[]).unwrap();
+        assert_eq!((c.weapon.as_str(), c.name.as_str(), c.stats.len()), ("Wolf Sledge", "Tempi-loctiata", 4));
+        assert!(c.stats[3].negative && c.stats[3].stat == "fire_rate");
+        // title unreadable -> weapon from "Fits in"
+        let card2: Vec<String> = ["W0lf Sl3dge Tempi-", "loctiata", "+172,3% Melee Damage", "+2,1 Range"].iter().map(|s| s.to_string()).collect();
+        let fits: Vec<String> = ["FITS IN", "Wolf Sledge"].iter().map(|s| s.to_string()).collect();
+        let c = parse_card(&ex, &weapons, &card2, &fits).unwrap();
+        assert_eq!(c.weapon, "Wolf Sledge");
+    }
+}
