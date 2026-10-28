@@ -79,7 +79,9 @@ fn parse_stat(line: &str) -> Option<StatInput> {
         return None;
     }
     let key = stat_key(tail)?;
-    let multiplier = prefix.eq_ignore_ascii_case("x") || prefix.ends_with('x') || prefix.ends_with('X');
+    // Faction damage is always shown as a multiplier; OCR sometimes drops the "x".
+    let faction = matches!(key, "grineer" | "corpus" | "infested");
+    let multiplier = faction || prefix.eq_ignore_ascii_case("x") || prefix.ends_with('x') || prefix.ends_with('X');
     let minus = prefix.contains('-') || prefix.contains('−') || prefix.contains('–');
     let (value, mut negative) = if multiplier {
         // Faction damage is shown as a multiplier: x1.53 = +53 %, x0.7 = -30 %.
@@ -290,5 +292,43 @@ mod card_tests {
         let fits: Vec<String> = ["FITS IN", "Wolf Sledge"].iter().map(|s| s.to_string()).collect();
         let c = parse_card(&ex, &weapons, &card2, &fits).unwrap();
         assert_eq!(c.weapon, "Wolf Sledge");
+    }
+}
+
+/// Two OCR readings of the same card: keep the one with more stats and fill
+/// stats it missed from the other (same order as on the card).
+pub fn merge(a: Option<RivenCard>, b: Option<RivenCard>) -> Option<RivenCard> {
+    match (a, b) {
+        (Some(a), Some(b)) => {
+            let (mut base, other) = if b.stats.len() > a.stats.len() { (b, a) } else { (a, b) };
+            for s in other.stats {
+                if base.stats.len() < 4 && !base.stats.iter().any(|x| x.stat == s.stat) {
+                    base.stats.push(s);
+                }
+            }
+            Some(base)
+        }
+        (a, b) => a.or(b),
+    }
+}
+
+#[cfg(test)]
+mod ocr_real_tests {
+    use super::*;
+
+    // Lines read from a real 1080p cycling screen (Color x1).
+    #[test]
+    fn real_confirm_screen() {
+        let ex = Export::default();
+        let weapons = vec![("Wolf Sledge".to_string(), "wolf_sledge".to_string())];
+        let l = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        let a = parse_card(&ex, &weapons, &l(&["Wolf Sledge Argi-", "tempitron", "+8,8s Combo Duration", "x 1,52 Damage to Grineer", "xl Damage to Corpus", "0,63 Damage to Infested", "MR 14"]), &[]);
+        let b = parse_card(&ex, &weapons, &l(&["Wolf Sledge Argi-", "tempitron", "+8,8s Combo Duration", "xl 152 Damage to Grineer", "x1,48 Damage to Corpus", "x0,63 Damage to Infested"]), &[]);
+        let c = merge(a, b).unwrap();
+        assert_eq!(c.name, "Argi-tempitron");
+        let keys: Vec<&str> = c.stats.iter().map(|s| s.stat.as_str()).collect();
+        assert!(keys.contains(&"combo_duration") && keys.contains(&"grineer") && keys.contains(&"corpus") && keys.contains(&"infested"), "{keys:?}");
+        let inf = c.stats.iter().find(|s| s.stat == "infested").unwrap();
+        assert!(inf.negative && (inf.value + 37.0).abs() < 0.1, "{inf:?}");
     }
 }

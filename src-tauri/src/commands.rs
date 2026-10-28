@@ -1038,27 +1038,44 @@ fn cached_auctions(slug: &str) -> Option<Vec<wfc_core::riven::RivenAuction>> {
 /// OCR of the card only (cheap); the "Fits in" box is read only when the title
 /// can't be matched. `None` = no riven card on screen.
 async fn read_card(app: &AppHandle) -> anyhow::Result<Option<wfc_core::riven_ocr::RivenCard>> {
-    use wfc_core::ocr::Crop;
+    use wfc_core::ocr::{prep_text, recognize, Crop, Prep};
     let st = app.state::<AppState>();
     let ex = st.export.read().clone().ok_or_else(|| anyhow::anyhow!("game data not loaded yet"))?;
     if RIVEN_WEAPONS.lock().is_empty() {
         prefetch_riven_weapons(app).await;
     }
     let weapons: Vec<(String, String)> = RIVEN_WEAPONS.lock().iter().map(|w| (w.name.clone(), w.slug.clone())).collect();
-    let read = |crop: Crop| async move {
-        let (w, h, px) = tokio::task::spawn_blocking(move || wfc_core::ocr::capture_text(crop, 2)).await??;
-        tokio::task::spawn_blocking(move || wfc_core::ocr::recognize(w, h, &px)).await?
-    };
-    let card_lines = read(Crop { x: 0.40, y: 0.58, w: 0.20, h: 0.22 }).await?;
-    if let Some(c) = wfc_core::riven_ocr::parse_card(&ex, &weapons, &card_lines, &[]) {
-        return Ok(Some(c));
-    }
-    let fits_lines = read(Crop { x: 0.82, y: 0.64, w: 0.16, h: 0.26 }).await.unwrap_or_default();
-    let parsed = wfc_core::riven_ocr::parse_card(&ex, &weapons, &card_lines, &fits_lines);
-    if parsed.is_none() {
-        tracing::debug!("riven ocr card: {:?} fits in: {:?}", card_lines, fits_lines);
-    }
-    Ok(parsed)
+    // One screenshot, two readings of the card (colour as is, and inverted x2):
+    // each misreads a different digit now and then, together they cover the card.
+    tokio::task::spawn_blocking(move || -> anyhow::Result<Option<wfc_core::riven_ocr::RivenCard>> {
+        let img = wfc_core::ocr::screenshot()?;
+        let card = Crop { x: 0.40, y: 0.58, w: 0.20, h: 0.22 };
+        let fits = Crop { x: 0.82, y: 0.64, w: 0.16, h: 0.26 };
+        let read = |crop: Crop, scale: u32, prep: Prep| {
+            let (w, h, px) = prep_text(&img, crop, scale, prep);
+            recognize(w, h, &px).unwrap_or_default()
+        };
+        let a_lines = read(card, 1, Prep::Color);
+        let a = wfc_core::riven_ocr::parse_card(&ex, &weapons, &a_lines, &[]);
+        if a.as_ref().is_some_and(|c| c.stats.len() >= 4) {
+            return Ok(a);
+        }
+        let b_lines = read(card, 2, Prep::InvertGray);
+        let mut merged = wfc_core::riven_ocr::merge(a, wfc_core::riven_ocr::parse_card(&ex, &weapons, &b_lines, &[]));
+        if merged.is_none() {
+            // Title unreadable: weapon from the "Fits in" box.
+            let fits_lines = read(fits, 1, Prep::Color);
+            merged = wfc_core::riven_ocr::merge(
+                wfc_core::riven_ocr::parse_card(&ex, &weapons, &a_lines, &fits_lines),
+                wfc_core::riven_ocr::parse_card(&ex, &weapons, &b_lines, &fits_lines),
+            );
+            if merged.is_none() {
+                tracing::debug!("riven ocr card: {:?} / {:?} fits in: {:?}", a_lines, b_lines, fits_lines);
+            }
+        }
+        Ok(merged)
+    })
+    .await?
 }
 
 fn build_scan(app: &AppHandle, card: wfc_core::riven_ocr::RivenCard, auctions: Option<&[wfc_core::riven::RivenAuction]>) -> anyhow::Result<RivenScan> {
@@ -1118,7 +1135,16 @@ pub async fn riven_scan_now(app: &AppHandle) {
     use std::sync::atomic::Ordering;
     use tauri::Emitter;
     let gen = RIVEN_GEN.fetch_add(1, Ordering::Relaxed) + 1;
-    let card = match read_card(app).await {
+    // The card fades in; a few quick tries instead of one long wait.
+    let mut first = read_card(app).await;
+    for _ in 0..4 {
+        if matches!(first, Ok(Some(_))) {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(350)).await;
+        first = read_card(app).await;
+    }
+    let card = match first {
         Ok(Some(c)) => c,
         Ok(None) => {
             tracing::warn!("riven scan: no riven card found on screen");

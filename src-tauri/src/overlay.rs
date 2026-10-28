@@ -319,7 +319,7 @@ pub async fn on_event(app: &AppHandle, ev: GameEvent) {
             if st.db.get("riven_auto").as_deref() != Some("0") {
                 let app = app.clone();
                 tauri::async_runtime::spawn(async move {
-                    tokio::time::sleep(std::time::Duration::from_millis(700)).await;
+                    tokio::time::sleep(std::time::Duration::from_millis(350)).await;
                     crate::commands::riven_scan_now(&app).await;
                 });
             }
