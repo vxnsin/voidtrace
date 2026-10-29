@@ -17,17 +17,22 @@ const pos = ref<string[]>([]);
 const max = ref<number | null>(null);
 const label = (s: string) => s.replace(/_/g, " ");
 
+let seq = 0;
 async function search() {
   if (!weapon.value) { err.value = "Pick a weapon from the list."; return; }
   busy.value = true; err.value = "";
   const slug = weapon.value.slug;
+  const mine = ++seq;
+  // A slower earlier search must not overwrite this one.
+  const current = () => mine === seq && weapon.value?.slug === slug;
   try {
     const r = await extra.rivenSearch(slug, weapon.value.name);
+    if (!current()) return;
     // Another weapon: the price limit and stats picked for the last one don't apply.
     if (slug !== searched.value) { max.value = null; pos.value = []; searched.value = slug; }
     res.value = r;
     if (max.value == null && r.prices.median) max.value = Math.round(r.prices.median * 0.8);
-  } catch (e) { err.value = String(e); } finally { busy.value = false; }
+  } catch (e) { if (current()) err.value = String(e); } finally { if (mine === seq) busy.value = false; }
 }
 const unrolled = computed(() => res.value?.weekly.find((w) => !w.rerolled));
 const rolled = computed(() => res.value?.weekly.find((w) => w.rerolled));

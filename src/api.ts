@@ -15,7 +15,7 @@ export type PriceSummary = { slug: string; name: string; ducats: number; sell: n
 export type ClosedOrder = { id: string; kind: "buy" | "sell"; quantity: number; platinum: number; closed: string; slug: string; name: string };
 export type Order = { id: string; type: "buy" | "sell"; platinum: number; quantity: number; visible: boolean; itemId: string; rank?: number; user?: { ingameName: string; status: string; reputation: number } };
 export type MasteryItem = { unique_name: string; name: string; category: string; xp: number; max_xp: number; mastered: boolean; owned: boolean; mastery_points: number; image: string | null };
-export type MasterySummary = { items: MasteryItem[]; mastered: number; total: number; points: number; points_available: number; rank: number };
+export type MasterySummary = { items: MasteryItem[]; mastered: number; total: number; points: number; points_available: number; rank: number; points_exact: boolean };
 export type RelicHit = { relic: string; rarity: string; chance: [number, number, number, number]; vaulted: boolean };
 export type DropInfo = { item: string; rarity: string; chance: [number, number, number, number]; plat: number | null; ducats: number; slug: string | null; vaulted: boolean };
 export type RelicPlan = { relic: string; drops: DropInfo[]; expected_plat: number[]; expected_ducats: number[] };
@@ -154,10 +154,18 @@ export const notifyApi = {
   discordTest: (url: string) => invoke<void>("discord_test", { url }),
   config: async (): Promise<NotifyConfig> => {
     const d: NotifyConfig = { off: [], sound: [], cycle_lead: 5, cycles: [], fissure: { tiers: [], missions: [], steelPath: "all", storms: true } };
-    try { return { ...d, ...JSON.parse((await api.getSetting("notify")) ?? "{}") }; } catch { return d; }
+    try {
+      // Only an object counts; a broken fissure part falls back on its own.
+      const raw = JSON.parse((await api.getSetting("notify")) ?? "{}");
+      if (!raw || typeof raw !== "object" || Array.isArray(raw)) return d;
+      const f = raw.fissure && typeof raw.fissure === "object" && !Array.isArray(raw.fissure) ? raw.fissure : {};
+      return { ...d, ...raw, fissure: { ...d.fissure, ...f } };
+    } catch { return d; }
   },
   saveConfig: (c: NotifyConfig) => api.setSetting("notify", JSON.stringify(c)),
-  hooks: async (): Promise<DiscordHook[]> => { try { return JSON.parse((await api.getSetting("discord_hooks")) ?? "[]"); } catch { return []; } },
+  hooks: async (): Promise<DiscordHook[]> => {
+    try { const raw = JSON.parse((await api.getSetting("discord_hooks")) ?? "[]"); return Array.isArray(raw) ? raw : []; } catch { return []; }
+  },
   saveHooks: (h: DiscordHook[]) => api.setSetting("discord_hooks", JSON.stringify(h)),
   watch: () => invoke<WatchSnapshot>("market_watch"),
   watchRefresh: () => invoke<WatchSnapshot>("market_watch_refresh"),

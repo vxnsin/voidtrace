@@ -38,6 +38,8 @@ const match = (a: RivenAuction) => {
 };
 const fill = (s: { value: number; min: number; max: number }) =>
   Math.min(100, Math.max(4, ((Math.abs(s.value) - s.min) / Math.max(0.01, s.max - s.min)) * 100));
+// The grade scales some stats down; the pill shows what the card says.
+const shown = (k: string, v: number) => r.value?.card.stats.find((c) => c.stat === k)?.value ?? v;
 const gradeCls = (g: string) => "g" + g.replace("+", "p").replace("-", "m");
 const close = () => (live.showRiven = false);
 </script>
@@ -55,7 +57,7 @@ const close = () => (live.showRiven = false);
       <div class="stats">
         <div v-for="s in r.grade.stats" :key="s.stat" class="pill" :class="{ neg: s.negative }">
           <span class="ic">{{ s.negative ? "▼" : "▲" }}</span>
-          <span class="txt">{{ s.negative ? "−" : "+" }}{{ Math.abs(s.value).toFixed(1) }}{{ unit(s.stat) }} {{ label(s.stat) }}</span>
+          <span class="txt">{{ s.negative ? "−" : "+" }}{{ Math.abs(shown(s.stat, s.value)).toFixed(1) }}{{ unit(s.stat) }} {{ label(s.stat) }}</span>
           <span class="grade" :class="gradeCls(s.grade)">{{ s.grade }}</span>
           <span class="bar"><b :style="{ width: fill(s) + '%' }"></b></span>
         </div>

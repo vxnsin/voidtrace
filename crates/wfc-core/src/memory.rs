@@ -187,7 +187,9 @@ pub fn read_inventory_json() -> Result<serde_json::Value> {
     serde_json::from_slice(&doc).context("inventory JSON did not parse")
 }
 
-/// Run `cb` over every contiguous readable run of the Warframe process. Debug aid.
+/// Run `cb` over every committed readable region of the Warframe process, in
+/// pieces of at most 16 MB (overlapping by 64 bytes so short keys on a seam are
+/// still seen). One buffer is reused, so a huge region costs no more memory.
 #[cfg(windows)]
 pub fn walk_memory(mut cb: impl FnMut(usize, &[u8])) -> Result<()> {
     use windows::Win32::Foundation::CloseHandle;
@@ -197,6 +199,9 @@ pub fn walk_memory(mut cb: impl FnMut(usize, &[u8])) -> Result<()> {
 
     let pid = find_pid().context("Warframe is not running")?;
     let h = unsafe { OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, false, pid) }?;
+    const CHUNK: usize = 16 << 20;
+    const OVERLAP: usize = 64;
+    let mut buf = vec![0u8; CHUNK + OVERLAP];
     let mut addr: usize = 0;
     loop {
         let mut mbi = MEMORY_BASIC_INFORMATION::default();
@@ -207,11 +212,19 @@ pub fn walk_memory(mut cb: impl FnMut(usize, &[u8])) -> Result<()> {
         let base = mbi.BaseAddress as usize;
         let size = mbi.RegionSize;
         let prot = mbi.Protect.0;
-        if mbi.State == MEM_COMMIT && prot & PAGE_GUARD.0 == 0 && prot & PAGE_NOACCESS.0 == 0 && size < (1 << 32) {
-            let mut buf = vec![0u8; size];
-            let mut got = 0usize;
-            if unsafe { ReadProcessMemory(h, base as *const _, buf.as_mut_ptr() as *mut _, size, Some(&mut got)) }.is_ok() && got > 0 {
-                cb(base, &buf[..got]);
+        if mbi.State == MEM_COMMIT && prot & PAGE_GUARD.0 == 0 && prot & PAGE_NOACCESS.0 == 0 {
+            let mut off = 0usize;
+            while off < size {
+                let len = (size - off).min(CHUNK + OVERLAP);
+                let mut got = 0usize;
+                let at = base + off;
+                if unsafe { ReadProcessMemory(h, at as *const _, buf.as_mut_ptr() as *mut _, len, Some(&mut got)) }.is_ok() && got > 0 {
+                    cb(at, &buf[..got]);
+                }
+                if off + len >= size {
+                    break;
+                }
+                off += CHUNK;
             }
         }
         addr = match base.checked_add(size) {

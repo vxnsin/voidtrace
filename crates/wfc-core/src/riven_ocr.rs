@@ -82,6 +82,11 @@ fn parse_stat(line: &str) -> Option<StatInput> {
     // Faction damage is always shown as a multiplier; OCR sometimes drops the "x".
     let faction = matches!(key, "grineer" | "corpus" | "infested");
     let multiplier = faction || prefix.eq_ignore_ascii_case("x") || prefix.ends_with('x') || prefix.ends_with('X');
+    // "xl 152" is x1.52 without its decimal point; drop it so the other
+    // reading supplies the stat in merge.
+    if faction && !(0.1..=3.0).contains(&num) {
+        return None;
+    }
     let minus = prefix.contains('-') || prefix.contains('−') || prefix.contains('–');
     let (value, mut negative) = if multiplier {
         // Faction damage is shown as a multiplier: x1.53 = +53 %, x0.7 = -30 %.
@@ -264,7 +269,11 @@ pub fn parse_card(ex: &Export, weapons: &[(String, String)], card: &[String], fi
         Some(i) => fits_in[i + 1..].iter().collect(),
         None => fits_in.iter().collect(),
     };
-    let (weapon, weapon_slug) = candidates.iter().find_map(|l| known(l))?;
+    // The name can wrap: "Wolf" / "Sledge".
+    let (weapon, weapon_slug) = candidates
+        .iter()
+        .find_map(|l| known(l))
+        .or_else(|| candidates.windows(2).find_map(|w| known(&format!("{} {}", w[0].trim(), w[1].trim()))))?;
     let wl = weapon.to_ascii_lowercase();
     let name = title
         .to_ascii_lowercase()

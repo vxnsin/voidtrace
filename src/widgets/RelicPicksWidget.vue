@@ -19,9 +19,13 @@ async function load() {
 }
 // Each trigger on its own: or-ed together with inApp the value never changes.
 watch([() => live.relicSelect, () => live.editing], ([sel, edit]) => (sel || edit || inApp) && load(), { immediate: true });
-let off: (() => void) | undefined;
-onMounted(async () => { off = await api.on("inventory-synced", () => load()); });
-onUnmounted(() => off?.());
+const offs: (() => void)[] = [];
+onMounted(async () => {
+  offs.push(await api.on("inventory-synced", () => load()));
+  // Prices for a cold cache arrive in the background.
+  offs.push(await api.on("relic-prices", () => load()));
+});
+onUnmounted(() => offs.forEach((f) => f()));
 
 const best = computed(() => {
   const by = props.cfg.relicSort ?? "plat";

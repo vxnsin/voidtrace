@@ -89,8 +89,10 @@ export function applyTheme(t: Theme) {
 export async function initTheme() {
   try {
     const saved = await api.getSetting("theme");
-    if (saved) applyTheme(parseTheme(saved));
-  } catch {}
+    applyTheme(saved ? parseTheme(saved) : PRESETS[0]);
+  } catch {
+    applyTheme(PRESETS[0]);
+  }
   listen<Theme>("theme-changed", (e) => applyTheme(e.payload));
 }
 

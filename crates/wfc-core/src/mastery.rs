@@ -26,6 +26,10 @@ pub struct MasterySummary {
     pub points: u32,
     pub points_available: u32,
     pub rank: u32,
+    /// False when the profile's rank is above what item XP adds up to (star
+    /// chart, junctions, intrinsics are not in it): progress to the next rank
+    /// is then unknown.
+    pub points_exact: bool,
 }
 
 /// XP needed for rank 30. Frames, companions, archwings and necramechs give
@@ -77,7 +81,8 @@ pub fn summary(ex: &Export, profile: Option<&Profile>) -> MasterySummary {
     // The account's real rank comes with the profile; item XP alone misses star chart,
     // junctions, intrinsics and some item kinds, so it is only the fallback.
     let rank = profile.map(|p| p.player_level).filter(|l| *l > 0).unwrap_or_else(|| mr_from_points(points));
-    MasterySummary { total: items.len(), mastered, points, points_available, rank, items }
+    let points_exact = mr_from_points(points) >= rank;
+    MasterySummary { total: items.len(), mastered, points, points_available, rank, points_exact, items }
 }
 
 fn curve_pts(i: &MasteryItem) -> u32 {

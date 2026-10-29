@@ -21,7 +21,8 @@ async function load() {
   } catch (e) { msg.value = String(e); }
 }
 const have = (slug?: string) => props.rows.find((r) => r.slug === slug)?.quantity ?? 0;
-// Only orders whose item is known; otherwise the row is an id nobody can judge.
+// Sell orders whose item the catalogue doesn't know: coverage unknown.
+const unknown = computed(() => orders.value.filter((o) => o.type === "sell" && !items.value[o.itemId]));
 const stale = computed(() =>
   orders.value.filter((o) => {
     const slug = items.value[o.itemId]?.slug;
@@ -82,6 +83,7 @@ onMounted(load);
         </tr>
       </tbody>
     </table>
-    <p v-else class="muted" style="margin:8px 0 0">Every sell listing is covered by the inventory.</p>
+    <p v-else-if="!unknown.length" class="muted" style="margin:8px 0 0">Every sell listing is covered by the inventory.</p>
+    <p v-if="unknown.length" class="muted" style="margin:8px 0 0">{{ unknown.length }} listing{{ unknown.length === 1 ? "" : "s" }} for items the catalogue doesn't know yet ({{ unknown.map((o) => o.itemId).join(", ") }}); coverage unknown.</p>
   </div>
 </template>

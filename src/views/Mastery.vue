@@ -17,8 +17,9 @@ async function load(fetchProfile = false) {
   } catch (e) { err.value = String(e); } finally { busy.value = false; }
 }
 const nextRank = computed(() => data.value ? 2500 * (data.value.rank + 1) ** 2 : 0);
-// Item XP misses star chart, junctions and intrinsics; never show less than the rank's own floor.
-const have = computed(() => data.value ? Math.max(data.value.points, 2500 * data.value.rank ** 2) : 0);
+// Item XP misses star chart, junctions and intrinsics. When it can't explain the
+// rank, the real total is unknown and so is the way to the next rank.
+const have = computed(() => (data.value?.points_exact ? data.value.points : null));
 const todo = computed(() => (data.value?.items ?? []).filter((i) => !i.mastered).sort((a, b) => b.xp - a.xp || a.name.localeCompare(b.name)));
 const byCat = computed(() => {
   const m: Record<string, { done: number; total: number }> = {};
@@ -57,10 +58,10 @@ onMounted(async () => {
   <p v-if="err" class="error">{{ err }}</p>
   <template v-if="data">
     <div class="grid cols-4">
-      <div class="card"><div class="stat">MR {{ data.rank }}<small>{{ have.toLocaleString() }} / {{ nextRank.toLocaleString() }} to next</small></div></div>
+      <div class="card"><div class="stat">MR {{ data.rank }}<small v-if="have != null">{{ have.toLocaleString() }} / {{ nextRank.toLocaleString() }} to next</small><small v-else>next rank at {{ nextRank.toLocaleString() }}</small></div></div>
       <div class="card"><div class="stat">{{ data.mastered }} / {{ data.total }}<small>items mastered</small></div></div>
       <div class="card"><div class="stat">{{ (data.points_available - data.points).toLocaleString() }}<small>mastery points left</small></div></div>
-      <div class="card"><div class="stat">{{ Math.max(0, Math.ceil((nextRank - have) / 3000)) }}<small>weapons to next rank</small></div></div>
+      <div class="card"><div class="stat">{{ have != null ? Math.max(0, Math.ceil((nextRank - have) / 3000)) : "–" }}<small>{{ have != null ? "weapons to next rank" : "weapons to next rank (star chart etc. not readable)" }}</small></div></div>
     </div>
     <h2>By category</h2>
     <div class="grid cols-4">

@@ -587,7 +587,13 @@ pub async fn set_price_alerts(app: AppHandle, st: State<'_, AppState>, alerts: V
     st.db.set("price_alerts", &serde_json::to_string(&alerts).map_err(err)?).map_err(err)?;
     let sock = st.ws.read().clone();
     match sock {
-        Some(s) if !alerts.is_empty() => s.subscribe(wfc_core::ws::new_orders_sub()).await.map_err(err)?,
+        // Saved either way; a failed subscribe reconnects, which subscribes again.
+        Some(s) if !alerts.is_empty() => {
+            if let Err(e) = s.subscribe(wfc_core::ws::new_orders_sub()).await {
+                tracing::warn!("price alerts subscribe: {e}");
+                crate::connect_ws(&app);
+            }
+        }
         None if !alerts.is_empty() => crate::connect_ws(&app),
         _ => {}
     }
@@ -1117,11 +1123,17 @@ async fn show_card(app: &AppHandle, gen: u64, card: wfc_core::riven_ocr::RivenCa
         return;
     }
     let Some(slug) = card.weapon_slug.clone() else { return };
-    let list = wfc_core::riven::riven_auctions(&st.http, &slug).await.unwrap_or_default();
-    RIVEN_AUCTIONS
-        .lock()
-        .get_or_insert_with(Default::default)
-        .insert(slug, (std::time::Instant::now(), list.clone()));
+    // Only a real answer is cached; after a failure the next scan asks again.
+    let list = match wfc_core::riven::riven_auctions(&st.http, &slug).await {
+        Ok(list) => {
+            RIVEN_AUCTIONS.lock().get_or_insert_with(Default::default).insert(slug, (std::time::Instant::now(), list.clone()));
+            list
+        }
+        Err(e) => {
+            tracing::debug!("riven auctions {slug}: {e}");
+            Vec::new()
+        }
+    };
     if RIVEN_GEN.load(std::sync::atomic::Ordering::Relaxed) == gen {
         if let Ok(scan) = build_scan(app, card, Some(&list)) {
             let _ = app.emit("riven", &scan);

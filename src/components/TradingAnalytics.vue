@@ -90,16 +90,17 @@ const traded = computed(() => {
 const pick = ref("");
 const stats = ref<ItemStats | null>(null);
 const statsErr = ref("");
+let statsGen = 0;
 async function loadStats() {
+  // Only the latest request may fill the chart (A, B, A again included).
+  const gen = ++statsGen;
   stats.value = null; statsErr.value = "";
   if (!pick.value) return;
-  // A slow answer for the previous pick must not land on the new one.
-  const slug = pick.value;
   try {
-    const s = await dataApi.marketStats(slug);
-    if (slug === pick.value) stats.value = s;
+    const s = await dataApi.marketStats(pick.value);
+    if (gen === statsGen) stats.value = s;
   } catch (e) {
-    if (slug === pick.value) statsErr.value = String(e);
+    if (gen === statsGen) statsErr.value = String(e);
   }
 }
 const median = (v: number[]) => [...v].sort((a, b) => a - b)[Math.floor(v.length / 2)] ?? 0;
@@ -136,7 +137,8 @@ onMounted(startLive);
 // The ledger arrives after mount; pick the first item then (and again if a
 // re-sync drops the current one).
 watch(traded, (t) => {
-  if (t.length && !t.some((x) => x.slug === pick.value)) { pick.value = t[0].slug; loadStats(); }
+  if (!t.length) { if (pick.value) { pick.value = ""; loadStats(); } return; }
+  if (!t.some((x) => x.slug === pick.value)) { pick.value = t[0].slug; loadStats(); }
 }, { immediate: true });
 </script>
 

@@ -128,8 +128,17 @@ document.getElementById("cards").addEventListener("click", (e) => {
   save(); render();
 });
 document.getElementById("editBtn").addEventListener("click", (e) => { document.body.classList.toggle("edit"); e.target.classList.toggle("on"); });
+let evSeq = 0;
 async function load() {
-  try { const r = await fetch("/api/state?t=" + T); if (r.ok) { S = await r.json(); render(); } } catch (e) {}
+  // An event during the request is newer than the answer; ask again then.
+  const seq = evSeq;
+  try {
+    const r = await fetch("/api/state?t=" + T);
+    if (!r.ok) return;
+    const s = await r.json();
+    if (seq !== evSeq) return load();
+    S = s; render();
+  } catch (e) {}
 }
 let timer;
 function connect() {
@@ -140,6 +149,7 @@ function connect() {
   es.onerror = () => dot.classList.remove("live");
   es.onmessage = (m) => {
     let ev; try { ev = JSON.parse(m.data); } catch (e) { return; }
+    evSeq++;
     if (ev.kind === "rewards") { S.rewards = ev.payload; render(); return; }
     if (ev.kind === "rewards-done") { S.rewards = null; render(); return; }
     if (ev.kind === "worldstate") { S.world = ev.payload; render(); return; }

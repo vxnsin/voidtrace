@@ -64,7 +64,8 @@ OAuth isn't open yet.
 
 `EE.log` is only read. The screen is captured once per relic reward screen. Requests go to
 api.warframe.market (your own account), DE's public endpoints, api.warframestat.us (world
-state for the widgets) and GitHub (update check). Nothing else leaves your PC.
+state for the widgets) and GitHub (update check). If you add a Discord webhook, notices go there
+too. Nothing else leaves your PC.
 
 > [!IMPORTANT]
 > Reading the inventory from the game process is **off by default**. When you turn it on,

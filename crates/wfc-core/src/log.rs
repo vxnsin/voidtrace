@@ -109,10 +109,13 @@ impl Compiled {
         })
     }
 
+    /// Overrides may leave out a capture group; such a line is then ignored
+    /// instead of indexing past the captures.
     fn classify(&self, line: &str) -> Option<GameEvent> {
+        let cap = |c: &regex::Captures, i: usize| c.get(i).map(|m| m.as_str().to_string());
         if let Some(c) = self.logged_in.captures(line) {
             return Some(GameEvent::LoggedIn {
-                name: c[1].to_string(),
+                name: cap(&c, 1)?,
                 id: c.get(2).map(|m| m.as_str().to_string()),
             });
         }
@@ -135,10 +138,10 @@ impl Compiled {
             return Some(GameEvent::RivenScreen);
         }
         if let Some(c) = self.inventory_received.captures(line) {
-            return Some(GameEvent::InventoryReceived { size: c[1].parse().unwrap_or(0) });
+            return Some(GameEvent::InventoryReceived { size: cap(&c, 1)?.parse().unwrap_or(0) });
         }
         if let Some(c) = self.relic_opened.captures(line) {
-            return Some(GameEvent::RelicOpened { relic: c[1].to_string() });
+            return Some(GameEvent::RelicOpened { relic: cap(&c, 1)? });
         }
         if self.trade_complete.is_match(line) {
             return Some(GameEvent::TradeComplete);
@@ -147,7 +150,7 @@ impl Compiled {
             return Some(GameEvent::MissionEnd);
         }
         if let Some(c) = self.mission_start.captures(line) {
-            return Some(GameEvent::MissionStart { name: c[1].to_string() });
+            return Some(GameEvent::MissionStart { name: cap(&c, 1)? });
         }
         None
     }

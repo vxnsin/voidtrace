@@ -328,13 +328,19 @@ pub async fn on_event(app: &AppHandle, ev: GameEvent) {
             tracing::info!("inventory document received ({size} bytes), scanning");
             auto_sync(app, 300, 1000);
             // Account id for the profile endpoint, read once while the game is up.
-            if st.db.get("memory_sync").as_deref() == Some("1") && st.db.get("player_id").map_or(true, |v| v.is_empty()) {
+            // One scan at a time; a second inventory event while it runs is skipped.
+            static SCANNING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+            if st.db.get("memory_sync").as_deref() == Some("1")
+                && st.db.get("player_id").map_or(true, |v| v.is_empty())
+                && !SCANNING.swap(true, std::sync::atomic::Ordering::SeqCst)
+            {
                 let app = app.clone();
                 tauri::async_runtime::spawn(async move {
                     if let Ok(Some(id)) = tokio::task::spawn_blocking(wfc_core::memory::find_account_id).await {
                         tracing::info!("account id read from the game");
                         let _ = app.state::<AppState>().db.set("player_id", &id);
                     }
+                    SCANNING.store(false, std::sync::atomic::Ordering::SeqCst);
                 });
             }
         }
