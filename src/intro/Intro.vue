@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from "vue";
 import { MARK, MARK_ASPECT, MARK_W } from "./mark";
+import { mix, theme } from "../theme";
 
 const emit = defineEmits<{ done: [] }>();
 const props = defineProps<{ backendOk: boolean }>();
@@ -18,6 +19,9 @@ let ctx: CanvasRenderingContext2D;
 let cols = 0, rows = 0;
 const CW = 8, CH = 14;
 const RAMP = " .,:;!?jJ$8@#";
+// Glyph brightness steps from the theme: background towards bright text.
+let SHADES: string[] = [];
+const shades = () => (SHADES = Array.from({ length: 24 }, (_, i) => mix(theme.current.bg, theme.current.hi, (40 + (i / 23) * 150) / 235)));
 
 function setMode(m: Mode) {
   mode.value = m;
@@ -61,7 +65,7 @@ function frame(now: number) {
   const total = DURATION[mode.value] / 1000;
   const p = total > 0 ? Math.min(1, t / total) : 1;
   const w = canvas.value!.width, h = canvas.value!.height;
-  ctx.fillStyle = "#070708";
+  ctx.fillStyle = theme.current.bg;
   ctx.fillRect(0, 0, w, h);
   ctx.font = `${CH - 2}px ${getComputedStyle(document.documentElement).getPropertyValue("--mono")}`;
   ctx.textBaseline = "top";
@@ -123,8 +127,8 @@ function frame(now: number) {
       const scramble = front || (v > 0 && n < 0.03);
       const ch = scramble ? RAMP[1 + Math.floor(hash(x, y, Math.floor(t * 20)) * (RAMP.length - 1))] : RAMP[idx];
       if (ch === " ") continue;
-      const g = Math.floor(40 + val * 150);
-      ctx.fillStyle = crimson && v > 0 ? "#c8102e" : `rgb(${g},${g},${g + 2})`;
+      const shade = SHADES[Math.min(23, Math.floor(val * 23))];
+      ctx.fillStyle = crimson && v > 0 ? theme.current.accent : shade;
       ctx.fillText(ch, x * CW, y * CH);
     }
   }
@@ -147,6 +151,7 @@ function resize() {
 }
 
 onMounted(() => {
+  shades();
   if (mode.value === "off") return finish();
   ctx = canvas.value!.getContext("2d")!;
   resize();
@@ -187,7 +192,7 @@ marker ......... wedge · crimson</pre>
 </template>
 
 <style scoped>
-.intro { position: fixed; inset: 0; background: #070708; z-index: 50; cursor: default; }
+.intro { position: fixed; inset: 0; background: var(--bg); z-index: 50; cursor: default; }
 canvas { display: block; width: 100%; height: 100%; }
 .meta { position: absolute; top: 14px; left: 16px; margin: 0; color: var(--dim); font-size: 10px; line-height: 1.5; letter-spacing: .04em; }
 .cta { position: absolute; left: 0; right: 0; bottom: 60px; text-align: center; opacity: 0; transition: opacity .6s; pointer-events: none; }
@@ -199,7 +204,7 @@ canvas { display: block; width: 100%; height: 100%; }
 .modes button { all: unset; cursor: pointer; padding: 4px 10px; font-size: 10px; letter-spacing: .08em; color: var(--muted); }
 .modes button.on { background: var(--bg3); color: var(--accent2); }
 .skip { all: unset; cursor: pointer; border: 1px solid var(--accent); padding: 4px 10px; font-size: 10px; letter-spacing: .1em; color: var(--accent2); display: flex; gap: 8px; }
-.skip:hover { background: var(--accent); color: #000; }
+.skip:hover { background: var(--accent); color: var(--on-accent, #000); }
 kbd { color: var(--muted); font: inherit; }
-.skip:hover kbd { color: #000; }
+.skip:hover kbd { color: var(--on-accent, #000); }
 </style>

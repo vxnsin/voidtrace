@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from "vue";
 import { api, type MasterySummary } from "../api";
 import ItemIcon from "../components/ItemIcon.vue";
+import MasteryRoutes from "../components/MasteryRoutes.vue";
 
 const playerId = ref("");
 const name = ref("");
@@ -16,6 +17,9 @@ async function load(fetchProfile = false) {
   } catch (e) { err.value = String(e); } finally { busy.value = false; }
 }
 const nextRank = computed(() => data.value ? 2500 * (data.value.rank + 1) ** 2 : 0);
+// Item XP misses star chart, junctions and intrinsics. When it can't explain the
+// rank, the real total is unknown and so is the way to the next rank.
+const have = computed(() => (data.value?.points_exact ? data.value.points : null));
 const todo = computed(() => (data.value?.items ?? []).filter((i) => !i.mastered).sort((a, b) => b.xp - a.xp || a.name.localeCompare(b.name)));
 const byCat = computed(() => {
   const m: Record<string, { done: number; total: number }> = {};
@@ -47,18 +51,17 @@ onMounted(async () => {
       <button class="btn primary" :disabled="busy || playerId.length !== 24" @click="load(true)">{{ busy ? "Loading…" : "Load profile" }}</button>
     </div>
     <p class="muted" style="margin:8px 0 0">
-      DE's profile endpoint needs your account id since U38.0.8, not the name. Log in at warframe.com, open
-      <code>www.warframe.com/api/user-data</code> and copy the value of <code>user_id</code>. Profile must be public
-      in game options. Don't spam this: bad ids or many requests get your IP blocked by DE for a while.
+      DE's profile endpoint needs your account id (24 hex characters), not the name. With Inventory sync on,
+      VoidTrace reads it from the game at the next login and fills it in here. Profile must be public in game options. Don't spam this: bad ids or many requests get your IP blocked by DE for a while.
     </p>
   </div>
   <p v-if="err" class="error">{{ err }}</p>
   <template v-if="data">
     <div class="grid cols-4">
-      <div class="card"><div class="stat">MR {{ data.rank }}<small>{{ data.points.toLocaleString() }} / {{ nextRank.toLocaleString() }} to next</small></div></div>
+      <div class="card"><div class="stat">MR {{ data.rank }}<small v-if="have != null">{{ have.toLocaleString() }} / {{ nextRank.toLocaleString() }} to next</small><small v-else>next rank at {{ nextRank.toLocaleString() }}</small></div></div>
       <div class="card"><div class="stat">{{ data.mastered }} / {{ data.total }}<small>items mastered</small></div></div>
       <div class="card"><div class="stat">{{ (data.points_available - data.points).toLocaleString() }}<small>mastery points left</small></div></div>
-      <div class="card"><div class="stat">{{ Math.ceil((nextRank - data.points) / 3000) }}<small>weapons to next rank</small></div></div>
+      <div class="card"><div class="stat">{{ have != null ? Math.max(0, Math.ceil((nextRank - have) / 3000)) : "–" }}<small>{{ have != null ? "weapons to next rank" : "weapons to next rank (star chart etc. not readable)" }}</small></div></div>
     </div>
     <h2>By category</h2>
     <div class="grid cols-4">
@@ -67,6 +70,8 @@ onMounted(async () => {
         <div class="bar" style="margin-top:6px"><i :style="{ width: (v.done / v.total) * 100 + '%' }"></i></div>
       </div>
     </div>
+    <MasteryRoutes />
+
     <h2>Unmastered — closest first</h2>
     <table>
       <thead><tr><th>Item</th><th>Category</th><th>Progress</th><th>MR points</th></tr></thead>

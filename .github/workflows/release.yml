@@ -1,5 +1,5 @@
 # Push a tag like v0.3.0 (matching "version" in src-tauri/tauri.conf.json) and this
-# builds the signed Windows installer plus latest.json, which the in-app updater reads
+# builds the signed Windows installer, the Linux AppImage and .deb, plus latest.json, which the in-app updater reads
 # from https://github.com/vxnsin/voidtrace/releases/latest/download/latest.json.
 # Needs the repo secret TAURI_SIGNING_PRIVATE_KEY (contents of the .key file).
 name: Release
@@ -36,3 +36,36 @@ jobs:
           releaseDraft: false
           prerelease: false
           includeUpdaterJson: true
+
+  # AppImage and .deb; the market, trading, planner, foundry and widgets work,
+  # OCR and the memory read are Windows-only for now (see README). Runs after
+  # windows so the two never rewrite latest.json at the same time.
+  linux:
+    runs-on: ubuntu-22.04
+    needs: windows
+    steps:
+      - uses: actions/checkout@v4
+      - name: Linux packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev patchelf \
+            libxcb1-dev libxrandr-dev libdbus-1-dev libpipewire-0.3-dev libwayland-dev libegl-dev libgbm-dev
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+      - run: npm ci
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: VoidTrace ${{ github.ref_name }}
+          releaseDraft: false
+          prerelease: false
+          includeUpdaterJson: true
+          args: --bundles appimage,deb

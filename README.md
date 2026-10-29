@@ -64,7 +64,8 @@ OAuth isn't open yet.
 
 `EE.log` is only read. The screen is captured once per relic reward screen. Requests go to
 api.warframe.market (your own account), DE's public endpoints, api.warframestat.us (world
-state for the widgets) and GitHub (update check). Nothing else leaves your PC.
+state for the widgets) and GitHub (update check). If you add a Discord webhook, notices go there
+too. Nothing else leaves your PC.
 
 > [!IMPORTANT]
 > Reading the inventory from the game process is **off by default**. When you turn it on,
@@ -108,8 +109,8 @@ cargo run --release -p wfc-core --example scan_watch   # poll the running game f
 **Launch with Warframe** registers VoidTrace to start with Windows in the tray; closing the
 window keeps it there, quit from the tray icon.
 
-**Account id** is only needed for mastery without the inventory read: log in at warframe.com,
-open `www.warframe.com/api/user-data` and copy `user_id`. Don't spam it — DE rate-limits by IP.
+**Account id** is only needed for the profile endpoint. With the inventory read on, VoidTrace takes it
+from the game at login; there is no public page that shows it any more. Don't spam the endpoint — DE rate-limits by IP.
 
 **Reward crop** sets where the OCR looks, in fractions of the screen; *Test OCR now* and
 *Preview overlay* help tune it for non-16:9 screens.

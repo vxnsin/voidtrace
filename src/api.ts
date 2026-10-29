@@ -15,7 +15,7 @@ export type PriceSummary = { slug: string; name: string; ducats: number; sell: n
 export type ClosedOrder = { id: string; kind: "buy" | "sell"; quantity: number; platinum: number; closed: string; slug: string; name: string };
 export type Order = { id: string; type: "buy" | "sell"; platinum: number; quantity: number; visible: boolean; itemId: string; rank?: number; user?: { ingameName: string; status: string; reputation: number } };
 export type MasteryItem = { unique_name: string; name: string; category: string; xp: number; max_xp: number; mastered: boolean; owned: boolean; mastery_points: number; image: string | null };
-export type MasterySummary = { items: MasteryItem[]; mastered: number; total: number; points: number; points_available: number; rank: number };
+export type MasterySummary = { items: MasteryItem[]; mastered: number; total: number; points: number; points_available: number; rank: number; points_exact: boolean };
 export type RelicHit = { relic: string; rarity: string; chance: [number, number, number, number]; vaulted: boolean };
 export type DropInfo = { item: string; rarity: string; chance: [number, number, number, number]; plat: number | null; ducats: number; slug: string | null; vaulted: boolean };
 export type RelicPlan = { relic: string; drops: DropInfo[]; expected_plat: number[]; expected_ducats: number[] };
@@ -23,6 +23,10 @@ export type InvRow = { slug: string; name: string; quantity: number };
 export type StatInput = { stat: string; value: number; negative: boolean };
 export type StatGrade = StatInput & { min: number; max: number; grade: string };
 export type RivenGrade = { weapon: string; disposition: number; stats: StatGrade[] };
+export type RivenAttr = { url_name: string; value: number; positive: boolean };
+export type RivenAuction = { id: string; name: string; buyout: number | null; starting: number; rerolls: number; mastery: number; polarity: string; attributes: RivenAttr[]; owner: string; owner_status: string };
+export type RivenCard = { weapon: string; weapon_slug: string | null; name: string; stats: StatInput[] };
+export type RivenScan = { card: RivenCard; positives: string[]; loading: boolean; grade: RivenGrade; similar: RivenAuction[]; prices: { min: number | null; median: number | null; count: number }; suggest: { mandatory: string[]; optional: string[]; negatives: string[] } };
 export type Trade = { id: number; ts: number; item: string; quantity: number; platinum: number; direction: "buy" | "sell"; partner: string };
 export type TradeDone = Omit<Trade, "id" | "ts"> & { order_id: string | null; slug: string | null };
 export type Datapoint = { ts: number; platinum: number; ducats: number; credits: number };
@@ -40,7 +44,8 @@ export type GameEvent = { kind: string; name?: string; relic?: string; line?: st
 export type Cycle = { activation: string; expiry: string; state: string };
 export type Fissure = { id: string; expiry: string; node: string; missionType: string; enemy: string; tier: string; tierNum: number; isStorm: boolean; isHard: boolean };
 export type VoidTrader = { activation: string; expiry: string; location: string; inventory: { item: string; ducats: number; credits: number }[] };
-export type WorldState = { cetusCycle?: Cycle; vallisCycle?: Cycle; cambionCycle?: Cycle; zarimanCycle?: Cycle; duviriCycle?: Cycle; earthCycle?: Cycle; fissures?: Fissure[]; voidTrader?: VoidTrader };
+export type VaultTrader = { activation: string; expiry: string; inventory: { item: string; ducats?: number | null; credits?: number | null }[] };
+export type WorldState = { vaultTrader?: VaultTrader; cetusCycle?: Cycle; vallisCycle?: Cycle; cambionCycle?: Cycle; zarimanCycle?: Cycle; duviriCycle?: Cycle; earthCycle?: Cycle; fissures?: Fissure[]; voidTrader?: VoidTrader };
 
 const iconUrl = (icon: string) => `https://warframe.market/static/assets/${icon}`;
 const icons = new Map<string, Promise<string | null>>();
@@ -64,7 +69,7 @@ export const api = {
   gameFocused: () => invoke<boolean>("game_focused"),
   worldstate: () => invoke<WorldState | null>("worldstate"),
   overlayEdit: (on: boolean) => invoke<void>("overlay_edit", { on }),
-  setOverlayHotkey: (action: "edit" | "hud", key: string) => invoke<void>("set_overlay_hotkey", { action, key }),
+  setOverlayHotkey: (action: "edit" | "hud" | "riven", key: string) => invoke<void>("set_overlay_hotkey", { action, key }),
   overlayHotkeys: () => invoke<Record<string, string>>("overlay_hotkeys"),
   hudHidden: () => invoke<boolean>("hud_hidden"),
   setHudHidden: (hidden: boolean) => invoke<void>("set_hud_hidden", { hidden }),
@@ -102,6 +107,7 @@ export const api = {
   inventoryAdd: (slug: string, name: string, delta: number) => invoke<number>("inventory_add", { slug, name, delta }),
   inventorySync: () => invoke<SyncResult>("inventory_sync"),
   gradeRiven: (weapon: string, stats: StatInput[]) => invoke<RivenGrade>("grade_riven", { weapon, stats }),
+  rivenScan: () => invoke<RivenScan>("riven_scan"),
   trades: () => invoke<Trade[]>("trades"),
   addTrade: (t: Omit<Trade, "id" | "ts">) => invoke<number>("add_trade", { t }),
   recordTrade: (t: TradeDone) => invoke<number>("record_trade", { t }),
@@ -122,3 +128,56 @@ export const tradePrompt = ref<{ order?: Order; onDone?: () => void } | null>(nu
 
 /** Open "new listing" dialog (App.vue renders it). `slug` preselects an item. */
 export const listingPrompt = ref<{ mode: "sell" | "buy"; slug?: string; onDone?: () => void } | null>(null);
+
+export type NoticeKind = "cycle" | "fissure" | "baro" | "undercut" | "price" | "trade" | "riven";
+export type Notice = { kind: NoticeKind | string; title: string; body: string; slug?: string; icon?: string; url?: string; ts: number; sound: boolean };
+export type FissureRule = { tiers: string[]; missions: string[]; steelPath: "all" | "only" | "hide"; storms: boolean };
+export type NotifyConfig = { off: string[]; sound: string[]; cycle_lead: number; cycles: string[]; fissure: FissureRule };
+export type DiscordHook = { name: string; url: string; kinds: string[] };
+export type WatchRow = { order_id: string; item_id: string; slug: string; name: string; kind: "sell" | "buy"; mine: number; quantity: number; rank: number | null; visible: boolean; best: number | null; best_user: string | null; beaten: boolean };
+export type WatchSnapshot = { checked: number; rows: WatchRow[] };
+export type PriceAlert = { slug: string; name: string; item_id: string; max: number };
+
+export const NOTICE_KINDS: { kind: NoticeKind; label: string; hint: string }[] = [
+  { kind: "cycle", label: "World cycles", hint: "a cycle is about to flip" },
+  { kind: "fissure", label: "Fissures", hint: "a new fissure matches your rule" },
+  { kind: "baro", label: "Baro Ki'Teer", hint: "he arrived, and what's worth buying" },
+  { kind: "undercut", label: "Undercut / outbid", hint: "someone beat one of your listings" },
+  { kind: "price", label: "Price alerts", hint: "an item is listed at your price" },
+  { kind: "trade", label: "Trades", hint: "a trade was recorded and its order closed" },
+  { kind: "riven", label: "Riven sniper", hint: "a riven auction matches a saved search" },
+];
+
+export const notifyApi = {
+  notices: () => invoke<Notice[]>("notices"),
+  test: (kind: string) => invoke<void>("notify_test", { kind }),
+  discordTest: (url: string) => invoke<void>("discord_test", { url }),
+  config: async (): Promise<NotifyConfig> => {
+    const d: NotifyConfig = { off: [], sound: [], cycle_lead: 5, cycles: [], fissure: { tiers: [], missions: [], steelPath: "all", storms: true } };
+    try {
+      // Only an object counts; a broken fissure part falls back on its own.
+      const raw = JSON.parse((await api.getSetting("notify")) ?? "{}");
+      if (!raw || typeof raw !== "object" || Array.isArray(raw)) return d;
+      const f = raw.fissure && typeof raw.fissure === "object" && !Array.isArray(raw.fissure) ? raw.fissure : {};
+      return { ...d, ...raw, fissure: { ...d.fissure, ...f } };
+    } catch { return d; }
+  },
+  saveConfig: (c: NotifyConfig) => api.setSetting("notify", JSON.stringify(c)),
+  hooks: async (): Promise<DiscordHook[]> => {
+    try { const raw = JSON.parse((await api.getSetting("discord_hooks")) ?? "[]"); return Array.isArray(raw) ? raw : []; } catch { return []; }
+  },
+  saveHooks: (h: DiscordHook[]) => api.setSetting("discord_hooks", JSON.stringify(h)),
+  watch: () => invoke<WatchSnapshot>("market_watch"),
+  watchRefresh: () => invoke<WatchSnapshot>("market_watch_refresh"),
+  alerts: () => invoke<PriceAlert[]>("price_alerts"),
+  setAlerts: (alerts: PriceAlert[]) => invoke<void>("set_price_alerts", { alerts }),
+};
+
+export type Imported = { trades: number; history: number; relic_runs: number; inventory: number };
+export type StatPoint = { datetime: string; volume: number; min: number; max: number; avg: number; median: number };
+export type ItemStats = { hours48: StatPoint[]; days90: StatPoint[] };
+export const dataApi = {
+  exportData: (path: string, format: "json" | "csv") => invoke<string[]>("export_data", { path, format }),
+  importData: (path: string) => invoke<Imported>("import_data", { path }),
+  marketStats: (slug: string) => invoke<ItemStats>("market_stats", { slug }),
+};

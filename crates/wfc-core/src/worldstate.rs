@@ -9,7 +9,7 @@ use serde_json::{Map, Value};
 const URL: &str = "https://api.warframestat.us/pc/?language=en";
 const KEYS: &[&str] = &[
     "timestamp", "cetusCycle", "vallisCycle", "cambionCycle", "zarimanCycle", "duviriCycle", "earthCycle",
-    "fissures", "voidTrader", "sortie", "archonHunt", "arbitration", "steelPath",
+    "fissures", "voidTrader", "vaultTrader", "sortie", "archonHunt", "arbitration", "steelPath",
 ];
 
 /// Only the parts the widgets use; the full document is ~180 KB.

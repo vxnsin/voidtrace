@@ -94,13 +94,13 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .box { position: relative; width: 100%; height: 100%; overflow: hidden; }
-.box.virtual { height: auto; border: 1px solid var(--border, #1d1d21); background: linear-gradient(180deg, #1a1f27 0%, #10141a 45%, #0b0d10 100%); }
+.box.virtual { height: auto; border: 1px solid var(--border); background: linear-gradient(180deg, #1a1f27 0%, #10141a 45%, #0b0d10 100%); }
 .layer { position: absolute; inset: 0; transform-origin: top left; }
 .box.virtual .layer { inset: auto; left: 0; top: 0; }
 .slot { position: absolute; }
-.layer.edit .slot { cursor: move; outline: 1px dashed rgba(200, 16, 46, .7); }
-.layer.edit .slot.sel { outline: 2px solid #c8102e; }
-.layer.edit { background-image: linear-gradient(rgba(200, 16, 46, .07) 1px, transparent 1px), linear-gradient(90deg, rgba(200, 16, 46, .07) 1px, transparent 1px); background-size: 33.333% 33.333%; }
+.layer.edit .slot { cursor: move; outline: 1px dashed color-mix(in srgb, var(--accent) 70%, transparent); }
+.layer.edit .slot.sel { outline: 2px solid var(--accent); }
+.layer.edit { background-image: linear-gradient(color-mix(in srgb, var(--accent) 07%, transparent) 1px, transparent 1px), linear-gradient(90deg, color-mix(in srgb, var(--accent) 07%, transparent) 1px, transparent 1px); background-size: 33.333% 33.333%; }
 /* Alt held: the snap grid (48 x 27, see GRID_X / GRID_Y). */
-.layer.edit.snap { background-image: linear-gradient(rgba(232, 232, 232, .09) 1px, transparent 1px), linear-gradient(90deg, rgba(232, 232, 232, .09) 1px, transparent 1px); background-size: calc(100% / 48) calc(100% / 27); }
+.layer.edit.snap { background-image: linear-gradient(color-mix(in srgb, var(--accent2) 09%, transparent) 1px, transparent 1px), linear-gradient(90deg, color-mix(in srgb, var(--accent2) 09%, transparent) 1px, transparent 1px); background-size: calc(100% / 48) calc(100% / 27); }
 </style>

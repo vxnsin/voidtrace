@@ -14,6 +14,7 @@ import RelicPlanner from "./views/RelicPlanner.vue";
 import Rivens from "./views/Rivens.vue";
 import Trading from "./views/Trading.vue";
 import Market from "./views/Market.vue";
+import Watch from "./views/Watch.vue";
 import Chat from "./views/Chat.vue";
 import Widgets from "./views/Widgets.vue";
 import Settings from "./views/Settings.vue";
@@ -26,6 +27,7 @@ const tabs = [
   { id: "rivens", label: "Riven Explorer", c: Rivens },
   { id: "trading", label: "Trading", c: Trading },
   { id: "market", label: "Warframe.Market", c: Market },
+  { id: "watch", label: "Market Watch", c: Watch },
   { id: "chat", label: "WFM Chat", c: Chat },
   { id: "widgets", label: "Widgets", c: Widgets },
   { id: "settings", label: "Settings", c: Settings },

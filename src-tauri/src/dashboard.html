@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#070708" />
+<title>VoidTrace</title>
+<style>
+  :root { --bg: #070708; --bg2: #0d0d10; --fg: #b4b4b4; --hi: #e8e8e8; --muted: #5a5a60; --dim: #2a2a2e; --accent: #c8102e; --warn: #b89a5a; --ok: #9aa89a; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--fg); font: 13px/1.5 ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace; }
+  header { display: flex; justify-content: space-between; align-items: baseline; padding: 14px 16px 6px; letter-spacing: .14em; text-transform: uppercase; font-size: 11px; }
+  header b { color: var(--hi); font-weight: 500; }
+  header button { all: unset; cursor: pointer; color: var(--muted); border: 1px solid var(--dim); padding: 3px 9px; }
+  header button.on { color: var(--hi); border-color: var(--accent); }
+  .dot { display: inline-block; width: 7px; height: 7px; background: var(--muted); margin-right: 6px; }
+  .dot.live { background: var(--ok); }
+  main { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px; padding: 8px 16px 24px; }
+  .card { background: var(--bg2); border: 1px solid var(--dim); padding: 12px 14px; }
+  .card.wide { grid-column: 1 / -1; }
+  .card.hidden { display: none; }
+  body.edit .card.hidden { display: block; opacity: .35; }
+  .t { display: flex; justify-content: space-between; color: var(--hi); text-transform: uppercase; letter-spacing: .12em; font-size: 11px; margin-bottom: 8px; }
+  .t i { font-style: normal; color: var(--muted); }
+  .tools { display: none; gap: 6px; margin-bottom: 8px; }
+  body.edit .tools { display: flex; }
+  .tools button { all: unset; cursor: pointer; border: 1px solid var(--dim); padding: 2px 8px; color: var(--fg); }
+  .kv { display: grid; grid-template-columns: 1fr auto; gap: 2px 14px; }
+  .kv > :nth-child(even) { color: var(--hi); text-align: right; }
+  .muted { color: var(--muted); }
+  .plat { color: var(--hi); }
+  .ok { color: var(--ok); } .warn { color: var(--warn); } .red { color: var(--accent); }
+  .bar { height: 2px; background: var(--dim); margin: 2px 0 6px; } .bar i { display: block; height: 100%; background: var(--hi); }
+  .rewards { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; }
+  .rw { border: 1px solid var(--dim); padding: 10px; }
+  .rw.best { border-color: var(--accent); }
+  .rw .n { color: var(--hi); text-transform: uppercase; font-size: 11px; letter-spacing: .06em; }
+  .rw .p { font-size: 26px; color: var(--hi); }
+  .rw.best .p { color: var(--accent); }
+  .empty { color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <span><span id="dot" class="dot"></span><b>VoidTrace</b> <span id="who" class="muted"></span></span>
+  <button id="editBtn">Arrange</button>
+</header>
+<main id="cards"></main>
+<script>
+const T = new URLSearchParams(location.search).get("t");
+const CARDS = [
+  ["rewards", "Relic rewards"], ["cycles", "World cycles"], ["fissures", "Fissures"], ["trading", "Trading today"],
+  ["listings", "My listings"], ["notices", "Notices"], ["baro", "Baro Ki'Teer"],
+];
+let layout;
+try { layout = JSON.parse(localStorage.getItem("vt_layout")); } catch (e) {}
+if (!Array.isArray(layout)) layout = CARDS.map(([id]) => ({ id, on: true, wide: id === "rewards" }));
+for (const [id] of CARDS) if (!layout.find((l) => l.id === id)) layout.push({ id, on: true, wide: false });
+const save = () => { try { localStorage.setItem("vt_layout", JSON.stringify(layout)); } catch (e) {} };
+let S = {};
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+function left(iso) {
+  if (!iso) return "-";
+  let s = Math.max(0, Math.floor((Date.parse(iso) - Date.now()) / 1000));
+  const d = Math.floor(s / 86400); s %= 86400;
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), x = s % 60;
+  if (d) return d + "d " + h + "h";
+  return h ? h + "h " + String(m).padStart(2, "0") + "m" : m + "m " + String(x).padStart(2, "0") + "s";
+}
+const prog = (a, b) => { const s = Date.parse(a), e = Date.parse(b); return Math.min(1, Math.max(0, (Date.now() - s) / Math.max(1, e - s))); };
+const R = {
+  rewards() {
+    const r = Array.isArray(S.rewards) ? S.rewards : [];
+    if (!r.length) return '<div class="empty">Shows the four rewards while you pick, big enough to read next to the monitor.</div>';
+    return '<div class="rewards">' + r.map((h) => '<div class="rw' + (h.best ? " best" : "") + '"><div class="n">' + esc(h.price?.name ?? h.raw) + '</div><div class="p">' + (h.price?.sell ?? "-") + 'p</div><div class="muted">' + (h.price?.ducats ? h.price.ducats + " ducats" : "&nbsp;") + "</div></div>").join("") + "</div>";
+  },
+  cycles() {
+    const w = S.world || {};
+    const rows = [["Cetus", w.cetusCycle], ["Orb Vallis", w.vallisCycle], ["Cambion", w.cambionCycle], ["Zariman", w.zarimanCycle], ["Duviri", w.duviriCycle], ["Earth", w.earthCycle]].filter((r) => r[1]);
+    if (!rows.length) return '<div class="empty">Waiting for world state.</div>';
+    return rows.map(([n, c]) => '<div class="kv"><span>' + n + '</span><span>' + esc(c.state) + " &middot; " + left(c.expiry) + '</span></div><div class="bar"><i style="width:' + prog(c.activation, c.expiry) * 100 + '%"></i></div>').join("");
+  },
+  fissures() {
+    const f = (S.world?.fissures || []).filter((x) => Date.parse(x.expiry) > Date.now()).sort((a, b) => a.tierNum - b.tierNum).slice(0, 10);
+    if (!f.length) return '<div class="empty">No fissures right now.</div>';
+    return '<div class="kv">' + f.map((x) => "<span>" + esc(x.tier) + " " + esc(x.missionType) + (x.isHard ? ' <span class="red">SP</span>' : "") + (x.isStorm ? ' <span class="warn">storm</span>' : "") + '<br><span class="muted">' + esc(x.node) + "</span></span><span>" + left(x.expiry) + "</span>").join("") + "</div>";
+  },
+  trading() {
+    const t = S.trading || {};
+    const last = (t.last || []).map((x) => "<span>" + (x.direction === "sell" ? "sold " : "bought ") + esc(x.item) + '</span><span class="' + (x.direction === "sell" ? "ok" : "") + '">' + x.platinum + "p</span>").join("");
+    return '<div class="kv"><span>Sold</span><span>' + (t.sold || 0) + "p</span><span>Bought</span><span>" + (t.bought || 0) + "p</span><span>Trades</span><span>" + (t.count || 0) + "</span>" + (S.inventory ? "<span>Plat in game</span><span>" + S.inventory.platinum + "p</span>" : "") + '</div><div style="height:8px"></div><div class="kv">' + last + "</div>";
+  },
+  listings() {
+    const rows = S.listings?.rows || [];
+    if (!rows.length) return '<div class="empty">Shows your warframe.market listings once VoidTrace has checked them (Market Watch).</div>';
+    return '<div class="kv">' + rows.slice(0, 12).map((r) => "<span>" + esc(r.name) + ' <span class="muted">' + r.kind + "</span></span><span>" + r.mine + "p" + (r.best != null ? ' <span class="' + (r.beaten ? "red" : "muted") + '">/ ' + r.best + "p</span>" : "") + "</span>").join("") + "</div>";
+  },
+  notices() {
+    const n = S.notices || [];
+    if (!n.length) return '<div class="empty">Nothing yet.</div>';
+    return n.map((x) => '<div><span class="plat">' + esc(x.title) + '</span><br><span class="muted">' + esc(x.body) + "</span></div>").join('<div style="height:6px"></div>');
+  },
+  baro() {
+    const b = S.world?.voidTrader;
+    if (!b) return '<div class="empty">No data.</div>';
+    const here = Date.parse(b.activation) <= Date.now();
+    return '<div class="kv"><span>' + (here ? "Leaves in" : "Arrives in") + "</span><span>" + left(here ? b.expiry : b.activation) + "</span><span>Relay</span><span>" + esc(b.location) + "</span></div>" + (here && b.inventory?.length ? '<div style="height:6px"></div><div class="kv">' + b.inventory.slice(0, 14).map((i) => "<span>" + esc(i.item) + '</span><span class="warn">' + (i.ducats || "") + "</span>").join("") + "</div>" : "");
+  },
+};
+function render() {
+  const main = document.getElementById("cards");
+  main.innerHTML = layout.map((l, i) => {
+    const name = CARDS.find((c) => c[0] === l.id)?.[1] ?? l.id;
+    return '<section class="card' + (l.wide ? " wide" : "") + (l.on ? "" : " hidden") + '" data-id="' + l.id + '">' +
+      '<div class="tools"><button data-a="on" data-i="' + i + '">' + (l.on ? "hide" : "show") + '</button><button data-a="up" data-i="' + i + '">up</button><button data-a="down" data-i="' + i + '">down</button><button data-a="wide" data-i="' + i + '">' + (l.wide ? "narrow" : "wide") + "</button></div>" +
+      '<div class="t"><span>' + name + "</span></div>" + (R[l.id] ? R[l.id]() : "") + "</section>";
+  }).join("");
+  document.getElementById("who").textContent = S.player ? "/ " + S.player : "";
+}
+document.getElementById("cards").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-a]");
+  if (!b) return;
+  const i = Number(b.dataset.i), a = b.dataset.a;
+  if (a === "on") layout[i].on = !layout[i].on;
+  if (a === "wide") layout[i].wide = !layout[i].wide;
+  if (a === "up" && i > 0) [layout[i - 1], layout[i]] = [layout[i], layout[i - 1]];
+  if (a === "down" && i < layout.length - 1) [layout[i + 1], layout[i]] = [layout[i], layout[i + 1]];
+  save(); render();
+});
+document.getElementById("editBtn").addEventListener("click", (e) => { document.body.classList.toggle("edit"); e.target.classList.toggle("on"); });
+let evSeq = 0;
+async function load() {
+  // An event during the request is newer than the answer; ask again then.
+  const seq = evSeq;
+  try {
+    const r = await fetch("/api/state?t=" + T);
+    if (!r.ok) return;
+    const s = await r.json();
+    if (seq !== evSeq) return load();
+    S = s; render();
+  } catch (e) {}
+}
+let timer;
+function connect() {
+  const es = new EventSource("/api/events?t=" + T);
+  const dot = document.getElementById("dot");
+  // Events sent while the phone slept are gone; ask for the state again.
+  es.onopen = () => { dot.classList.add("live"); load(); };
+  es.onerror = () => dot.classList.remove("live");
+  es.onmessage = (m) => {
+    let ev; try { ev = JSON.parse(m.data); } catch (e) { return; }
+    evSeq++;
+    if (ev.kind === "rewards") { S.rewards = ev.payload; render(); return; }
+    if (ev.kind === "rewards-done") { S.rewards = null; render(); return; }
+    if (ev.kind === "worldstate") { S.world = ev.payload; render(); return; }
+    clearTimeout(timer); timer = setTimeout(load, 500);
+  };
+}
+load(); connect();
+// Not while arranging: replacing a button mid-tap loses the tap.
+setInterval(() => { if (!document.body.classList.contains("edit")) render(); }, 1000);
+setInterval(load, 60000);
+</script>
+</body>
+</html>

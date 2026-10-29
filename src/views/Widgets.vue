@@ -4,14 +4,16 @@ import { api } from "../api";
 import { startLive } from "../widgets/live";
 import { CATEGORIES, WIDGETS, loadWidgets, saveWidgets, type WidgetCfg } from "../widgets/registry";
 import WidgetSettings from "../widgets/WidgetSettings.vue";
+import NotifyCard from "../components/NotifyCard.vue";
 
 // Quick setup: each widget live with its settings next to it. Placing and
 // fine-tuning happens in game, in the overlay's edit mode.
 const cfgs = ref<WidgetCfg[]>([]);
-type Action = "edit" | "hud";
+type Action = "edit" | "hud" | "riven";
 const HOTKEYS: { action: Action; label: string; hint: string }[] = [
   { action: "edit", label: "Edit widgets", hint: "opens the editor over the game" },
   { action: "hud", label: "Hide / show widgets", hint: "hides every widget until pressed again" },
+  { action: "riven", label: "Scan riven on screen", hint: "reads the riven card in front of you: grades, listings, rolls" },
 ];
 const keys = ref<Record<string, string>>({});
 const capturing = ref<Action | null>(null);
@@ -74,6 +76,9 @@ onUnmounted(() => window.removeEventListener("keydown", capture));
     </div>
     <span class="muted">{{ msg || "Click a hotkey and press the new combination. They work system-wide while VoidTrace runs, so pick combinations other programs do not need." }}</span>
   </div>
+
+  <h2>Notifications</h2>
+  <NotifyCard />
 
   <template v-if="cfgs.length">
     <template v-for="c in CATEGORIES" :key="c">

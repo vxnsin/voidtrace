@@ -2,11 +2,12 @@
 import { computed, onMounted, ref } from "vue";
 import { api, fmtTs, tradePrompt, type Datapoint, type Status } from "../api";
 import ItemIcon from "../components/ItemIcon.vue";
+import TradingAnalytics from "../components/TradingAnalytics.vue";
 
 // One ledger from two sources: closed orders on warframe.market (public profile
 // statistics) and trades stored here (closed through VoidTrace or typed in).
 // A trade VoidTrace closed exists on both sides and is counted once.
-type Row = { key: string; ts: number; kind: "sell" | "buy"; name: string; slug: string | null; quantity: number; total: number; source: string; localId?: number };
+type Row = { key: string; ts: number; kind: "sell" | "buy"; name: string; slug: string | null; quantity: number; total: number; source: string; localId?: number; partner?: string };
 
 const props = defineProps<{ status: Status | null }>();
 const rows = ref<Row[]>([]);
@@ -33,8 +34,8 @@ async function load() {
   }));
   for (const t of trades) {
     const twin = out.find((r) => r.source === "warframe.market" && r.kind === t.direction && norm(r.name) === norm(t.item) && Math.abs(r.ts - t.ts) < 900);
-    if (twin) { twin.source = "VoidTrace"; twin.localId = t.id; continue; }
-    out.push({ key: "l" + t.id, ts: t.ts, kind: t.direction, name: t.item, slug: null, quantity: t.quantity, total: t.platinum, source: "manual", localId: t.id });
+    if (twin) { twin.source = "VoidTrace"; twin.localId = t.id; twin.partner = t.partner || undefined; continue; }
+    out.push({ key: "l" + t.id, ts: t.ts, kind: t.direction, name: t.item, slug: null, quantity: t.quantity, total: t.platinum, source: "manual", localId: t.id, partner: t.partner || undefined });
   }
   out.sort((a, b) => b.ts - a.ts);
   // Manual rows have no slug; look it up for the picture.
@@ -58,6 +59,7 @@ const bought = computed(() => sum(inRange.value, "buy"));
 const net = computed(() => sold.value - bought.value);
 const prevNet = computed(() => sum(prevRange.value, "sell") - sum(prevRange.value, "buy"));
 const lastPoint = computed(() => points.value[points.value.length - 1] ?? null);
+const pointsInRange = computed(() => points.value.filter((p) => p.ts >= from.value));
 
 const top = computed(() => {
   const m = new Map<string, { name: string; slug: string | null; total: number }>();
@@ -188,6 +190,8 @@ onMounted(load);
       <p v-if="!top.length" class="muted">No sales in this range.</p>
     </div>
   </div>
+
+  <TradingAnalytics :rows="inRange" :all="rows" :points="pointsInRange" />
 </template>
 
 <style scoped>
@@ -203,9 +207,9 @@ onMounted(load);
 .col { flex: 1 1 0; height: 100%; display: flex; align-items: flex-end; justify-content: center; gap: 1px; min-width: 0; }
 .col i { display: block; width: 40%; max-width: 12px; }
 .col .s { background: var(--accent2); opacity: .85; } .col .b { background: var(--muted); }
-.col:hover { background: rgba(255, 255, 255, .03); }
+.col:hover { background: var(--bg3); }
 .line { position: absolute; inset: 14px 0 0 0; width: 100%; height: calc(100% - 14px); pointer-events: none; }
 .xl { display: flex; justify-content: space-between; font-size: 10px; margin-top: 4px; }
-.tag.sold { color: var(--ok); border-color: #2f4a34; }
+.tag.sold { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 35%, transparent); }
 .stat.ok { color: var(--ok); } .stat.error { color: var(--accent); }
 </style>

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref } from "vue";
 import { api, type RivenGrade, type StatInput } from "../api";
+import RivenMarket from "../components/RivenMarket.vue";
 
 const STATS = [
   "damage", "multishot", "critical_chance", "critical_damage", "status_chance", "status_duration", "fire_rate",
@@ -58,4 +59,6 @@ async function grade() {
       </tbody>
     </table>
   </div>
+
+  <RivenMarket />
 </template>
