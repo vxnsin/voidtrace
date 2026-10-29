@@ -49,7 +49,7 @@ impl Notice {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct FissureRule {
     pub tiers: Vec<String>,
@@ -58,6 +58,13 @@ pub struct FissureRule {
     #[serde(rename = "steelPath")]
     pub steel_path: String,
     pub storms: bool,
+}
+
+/// Same defaults as the settings page shows: every fissure, storms included.
+impl Default for FissureRule {
+    fn default() -> Self {
+        Self { tiers: vec![], missions: vec![], steel_path: "all".into(), storms: true }
+    }
 }
 
 /// Setting `notify`; written by the Widgets tab.

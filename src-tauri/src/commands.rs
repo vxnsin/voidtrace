@@ -595,7 +595,9 @@ pub async fn set_price_alerts(app: AppHandle, st: State<'_, AppState>, alerts: V
             }
         }
         None if !alerts.is_empty() => crate::connect_ws(&app),
-        _ => {}
+        // Last alert gone: reconnect without the market-wide feed (or close).
+        Some(_) => crate::connect_ws(&app),
+        None => {}
     }
     Ok(())
 }

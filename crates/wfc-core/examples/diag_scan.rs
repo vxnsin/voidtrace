@@ -54,10 +54,14 @@ fn show(b: &[u8]) -> String {
 
 fn main() -> anyhow::Result<()> {
     // Concatenate contiguous regions exactly like the scanner's windows do.
+    // Pieces of one region overlap by up to 64 bytes; that part is skipped.
     let mut runs: Vec<(usize, Vec<u8>)> = Vec::new();
     wfc_core::memory::walk_memory(|base, buf| {
         match runs.last_mut() {
-            Some((b, v)) if *b + v.len() == base && v.len() < (256 << 20) => v.extend_from_slice(buf),
+            Some((b, v)) if base >= *b && base <= *b + v.len() && *b + v.len() - base <= 64 && v.len() < (256 << 20) => {
+                let skip = (*b + v.len() - base).min(buf.len());
+                v.extend_from_slice(&buf[skip..]);
+            }
             _ => runs.push((base, buf.to_vec())),
         }
     })?;

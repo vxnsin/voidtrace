@@ -13,19 +13,28 @@ const rows = ref<RelicRow[]>([]);
 const loaded = ref(false);
 const inApp = !location.hash.startsWith("#/overlay");
 
+// Price events can overlap loads; only the newest answer is kept.
+let gen = 0;
 async function load() {
-  try { rows.value = (await relicOverview(true)).rows; } catch { rows.value = []; }
+  const mine = ++gen;
+  let next: RelicRow[] = [];
+  try { next = (await relicOverview(true)).rows; } catch {}
+  if (mine !== gen) return;
+  rows.value = next;
   loaded.value = true;
 }
 // Each trigger on its own: or-ed together with inApp the value never changes.
 watch([() => live.relicSelect, () => live.editing], ([sel, edit]) => (sel || edit || inApp) && load(), { immediate: true });
 const offs: (() => void)[] = [];
+let gone = false;
+// A listener that registers after unmount is removed right away.
+const keep = (off: () => void) => (gone ? off() : offs.push(off));
 onMounted(async () => {
-  offs.push(await api.on("inventory-synced", () => load()));
+  keep(await api.on("inventory-synced", () => load()));
   // Prices for a cold cache arrive in the background.
-  offs.push(await api.on("relic-prices", () => load()));
+  keep(await api.on("relic-prices", () => load()));
 });
-onUnmounted(() => offs.forEach((f) => f()));
+onUnmounted(() => { gone = true; offs.forEach((f) => f()); });
 
 const best = computed(() => {
   const by = props.cfg.relicSort ?? "plat";
