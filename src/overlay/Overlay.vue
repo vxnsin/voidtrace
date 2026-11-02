@@ -36,6 +36,8 @@ const shown = computed(() =>
     if (edit.value) return true;
     if (hudHidden.value) return false;
     if (w.id === "rewards") return live.showRewards;
+    if (w.id === "relics") return live.relicSelect;
+    if (w.id === "riven") return live.showRiven;
     return live.game.focused && (w.show === "always" || w.show === live.game.where);
   }),
 );
@@ -97,6 +99,39 @@ async function moved(id: string, pos: { anchor: number; x: number; y: number }, 
 }
 const done = () => { sel.value = null; api.overlayEdit(false); };
 
+// The settings panel can be dragged by its header; the spot is remembered.
+const panelPos = ref<{ x: number; y: number } | null>(null);
+try {
+  // Saved on a bigger screen it could sit off this one; keep the header reachable.
+  const s = JSON.parse(localStorage.getItem("overlay_panel_pos") ?? "null");
+  if (Number.isFinite(s?.x) && Number.isFinite(s?.y)) {
+    panelPos.value = {
+      x: Math.min(Math.max(0, s.x), Math.max(0, window.innerWidth - 200)),
+      y: Math.min(Math.max(0, s.y), Math.max(0, window.innerHeight - 60)),
+    };
+  }
+} catch {}
+const panelStyle = computed(() => panelPos.value ? { left: panelPos.value.x + "px", top: panelPos.value.y + "px", right: "auto", transform: "none" } : {});
+function panelDown(e: PointerEvent) {
+  if ((e.target as HTMLElement).closest("button")) return;
+  const el = (e.currentTarget as HTMLElement).parentElement!;
+  const r = el.getBoundingClientRect();
+  const off = { x: e.clientX - r.left, y: e.clientY - r.top };
+  const move = (ev: PointerEvent) => {
+    const x = Math.min(Math.max(0, ev.clientX - off.x), window.innerWidth - r.width);
+    const y = Math.min(Math.max(0, ev.clientY - off.y), window.innerHeight - r.height);
+    panelPos.value = { x, y };
+  };
+  const up = () => {
+    window.removeEventListener("pointermove", move);
+    window.removeEventListener("pointerup", up);
+    try { localStorage.setItem("overlay_panel_pos", JSON.stringify(panelPos.value)); } catch {}
+  };
+  window.addEventListener("pointermove", move);
+  window.addEventListener("pointerup", up);
+  e.preventDefault();
+}
+
 onMounted(async () => {
   document.body.classList.add("overlay");
   startLive();
@@ -109,7 +144,7 @@ onMounted(async () => {
     clearTimeout(toastTimer);
     toastTimer = window.setTimeout(() => (toast.value = ""), 2500);
   });
-  api.on<boolean>("overlay-edit", (on) => { edit.value = on; if (on) reload(); else sel.value = null; });
+  api.on<boolean>("overlay-edit", (on) => { edit.value = on; live.editing = on; if (on) reload(); else sel.value = null; });
   api.on<string>("overlay-error", (e) => { error.value = e; setTimeout(() => (error.value = ""), 6000); });
   api.on("rewards", () => (error.value = ""));
   window.addEventListener("keydown", (e) => { if (e.key === "Escape" && edit.value) done(); });
@@ -138,13 +173,13 @@ onMounted(async () => {
       </div>
 
       <!-- settings panel -->
-      <div class="panel" @pointerdown.stop>
+      <div class="panel" :style="panelStyle" @pointerdown.stop>
         <template v-if="selected">
-          <div class="ph"><b>{{ meta(selected.id).name }}</b><button class="act" @click="remove(selected.id)">Remove</button></div>
+          <div class="ph" @pointerdown="panelDown"><b>{{ meta(selected.id).name }}</b><button class="act" @click="remove(selected.id)">Remove</button></div>
           <WidgetSettings :cfg="selected" @update="(p) => update(selected!.id, p)" />
         </template>
         <template v-else>
-          <div class="ph"><b>All widgets</b></div>
+          <div class="ph" @pointerdown="panelDown"><b>All widgets</b></div>
           <div class="ws-all">
             <label><span>Opacity</span><input type="range" min="0.4" max="1" step="0.02" :value="cfgs[0]?.opacity ?? 0.88" @change="updateAll({ opacity: Number(($event.target as HTMLInputElement).value) })" /></label>
             <label><span>Scale</span><input type="range" min="0.7" max="1.6" step="0.05" :value="cfgs[0]?.scale ?? 1" @change="updateAll({ scale: Number(($event.target as HTMLInputElement).value) })" /></label>
@@ -164,36 +199,37 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-.palette { position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: min(980px, 92vw); background: rgba(7, 7, 8, .95); border: 1px solid #c8102e; border-top: 0; font: 11px var(--mono); color: #8a8a90; z-index: 20; }
-.head { display: flex; align-items: center; gap: 14px; padding: 8px 12px; border-bottom: 1px solid #1d1d21; flex-wrap: wrap; }
-.head b { color: #e8e8e8; letter-spacing: .18em; font-weight: 500; }
+.palette { position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: min(980px, 92vw); background: color-mix(in srgb, var(--wbg) 95%, transparent); border: 1px solid var(--accent); border-top: 0; font: 11px var(--mono); color: var(--fg2); z-index: 20; }
+.head { display: flex; align-items: center; gap: 14px; padding: 8px 12px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.head b { color: var(--accent2); letter-spacing: .18em; font-weight: 500; }
 .cats { display: flex; }
-.cats button, .act { all: unset; cursor: pointer; padding: 3px 10px; border: 1px solid #2a2a2e; margin-left: -1px; color: #6a6a70; text-transform: uppercase; letter-spacing: .08em; font-size: 10.5px; }
-.cats button.on, .act.on { color: #e8e8e8; border-color: #c8102e; }
-.act.done { border-color: #c8102e; color: #e8e8e8; }
-.act.done:hover { background: #c8102e; color: #000; }
-.hint { flex: 1; color: #4e4e52; min-width: 200px; }
+.cats button, .act { all: unset; cursor: pointer; padding: 3px 10px; border: 1px solid var(--dim); margin-left: -1px; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; font-size: 10.5px; }
+.cats button.on, .act.on { color: var(--accent2); border-color: var(--accent); }
+.act.done { border-color: var(--accent); color: var(--accent2); }
+.act.done:hover { background: var(--accent); color: var(--on-accent); }
+.hint { flex: 1; color: var(--muted); min-width: 200px; }
 .tiles { display: flex; gap: 8px; padding: 10px 12px; overflow-x: auto; }
-.tile { flex: 0 0 210px; border: 1px dashed #2a2a2e; padding: 8px 10px; cursor: grab; display: grid; gap: 3px; user-select: none; }
-.tile b { color: #e8e8e8; font-weight: 500; letter-spacing: .06em; }
-.tile span { color: #6a6a70; font-size: 10.5px; }
-.tile i { font-style: normal; color: #4e4e52; font-size: 10px; text-transform: uppercase; letter-spacing: .1em; }
-.tile.pinned { border-style: solid; } .tile.pinned i { color: #b89a5a; }
-.tile.sel { border-color: #c8102e; }
+.tile { flex: 0 0 210px; border: 1px dashed var(--dim); padding: 8px 10px; cursor: grab; display: grid; gap: 3px; user-select: none; }
+.tile b { color: var(--accent2); font-weight: 500; letter-spacing: .06em; }
+.tile span { color: var(--muted); font-size: 10.5px; }
+.tile i { font-style: normal; color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .1em; }
+.tile.pinned { border-style: solid; } .tile.pinned i { color: var(--warn); }
+.tile.sel { border-color: var(--accent); }
 .tile { position: relative; }
-.tile .x { all: unset; position: absolute; top: 4px; right: 6px; cursor: pointer; color: #6a6a70; font-size: 14px; line-height: 1; padding: 2px 4px; }
-.tile .x:hover { color: #c8102e; }
-.palette.drop { background: rgba(60, 6, 16, .95); }
-.dropmsg { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #e8e8e8; letter-spacing: .2em; text-transform: uppercase; font-size: 12px; background: rgba(200, 16, 46, .25); z-index: 2; pointer-events: none; }
-.panel { position: absolute; right: 16px; top: 50%; transform: translateY(-50%); width: 320px; background: rgba(7, 7, 8, .95); border: 1px solid #c8102e; padding: 12px; z-index: 20; }
-.ph { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
-.ph b { color: #e8e8e8; letter-spacing: .12em; text-transform: uppercase; font: 500 11px var(--mono); }
-.ws-all { display: grid; gap: 10px; font: 11px var(--mono); color: #8a8a90; }
+.tile .x { all: unset; position: absolute; top: 4px; right: 6px; cursor: pointer; color: var(--muted); font-size: 14px; line-height: 1; padding: 2px 4px; }
+.tile .x:hover { color: var(--accent); }
+.palette.drop { background: color-mix(in srgb, var(--accent) 30%, var(--wbg)); }
+.dropmsg { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--accent2); letter-spacing: .2em; text-transform: uppercase; font-size: 12px; background: color-mix(in srgb, var(--accent) 25%, transparent); z-index: 2; pointer-events: none; }
+.panel { position: absolute; right: 16px; top: 50%; transform: translateY(-50%); width: 320px; background: color-mix(in srgb, var(--wbg) 95%, transparent); border: 1px solid var(--accent); padding: 12px; z-index: 20; }
+.ph { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; cursor: grab; user-select: none; }
+.ph:active { cursor: grabbing; }
+.ph b { color: var(--accent2); letter-spacing: .12em; text-transform: uppercase; font: 500 11px var(--mono); }
+.ws-all { display: grid; gap: 10px; font: 11px var(--mono); color: var(--fg2); }
 .ws-all label { display: flex; align-items: center; gap: 10px; }
-.ws-all label span { width: 70px; text-transform: uppercase; font-size: 10px; letter-spacing: .1em; color: #6a6a70; }
-.ws-all input { flex: 1; accent-color: #c8102e; }
-.ws-all p { margin: 0; color: #4e4e52; }
+.ws-all label span { width: 70px; text-transform: uppercase; font-size: 10px; letter-spacing: .1em; color: var(--muted); }
+.ws-all input { flex: 1; accent-color: var(--accent); }
+.ws-all p { margin: 0; color: var(--muted); }
 .ghost { position: fixed; transform: translate(-50%, -50%); pointer-events: none; opacity: .9; z-index: 30; }
-.toast { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); background: rgba(7, 7, 8, .9); border: 1px solid #2a2a2e; color: #b4b4b4; padding: 5px 12px; font: 11px var(--mono); letter-spacing: .06em; }
-.err { position: absolute; top: 60px; left: 50%; transform: translateX(-50%); background: rgba(7, 7, 8, .92); border: 1px solid #c8102e; color: #c8102e; padding: 6px 12px; font: 11px var(--mono); }
+.toast { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); background: color-mix(in srgb, var(--wbg) 90%, transparent); border: 1px solid var(--dim); color: var(--fg); padding: 5px 12px; font: 11px var(--mono); letter-spacing: .06em; }
+.err { position: absolute; top: 60px; left: 50%; transform: translateX(-50%); background: color-mix(in srgb, var(--wbg) 92%, transparent); border: 1px solid var(--accent); color: var(--accent); padding: 6px 12px; font: 11px var(--mono); }
 </style>

@@ -25,12 +25,12 @@ defineProps<{ cfg: WidgetCfg }>();
 
 <style scoped>
 .rw { display: flex; gap: 8px; }
-.card { display: flex; gap: 8px; align-items: center; border: 1px solid #2a2a2e; padding: 6px 8px; flex: 1 1 0; min-width: 0; max-width: 300px; }
-.card.best { border-color: #c8102e; }
+.card { display: flex; gap: 8px; align-items: center; border: 1px solid var(--dim); padding: 6px 8px; flex: 1 1 0; min-width: 0; max-width: 300px; }
+.card.best { border-color: var(--accent); }
 .txt { min-width: 0; }
-.nm { color: #e8e8e8; text-transform: uppercase; font-size: 9.5px; letter-spacing: .08em; }
-.best .nm { color: #c8102e; }
+.nm { color: var(--accent2); text-transform: uppercase; font-size: 9.5px; letter-spacing: .08em; }
+.best .nm { color: var(--accent); }
 .nums { display: flex; justify-content: space-between; gap: 12px; font-size: 16px; }
 .sub { font-size: 10px; }
-.vault { margin-left: 6px; padding: 0 4px; border: 1px solid #4a3f28; color: #b89a5a; font-size: 9px; }
+.vault { margin-left: 6px; padding: 0 4px; border: 1px solid color-mix(in srgb, var(--warn) 35%, transparent); color: var(--warn); font-size: 9px; }
 </style>

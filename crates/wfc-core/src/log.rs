@@ -22,6 +22,14 @@ pub enum GameEvent {
     RewardDone,
     TradeComplete,
     RelicOpened { relic: String },
+    /// The game just received the inventory document (login or loading screen);
+    /// it is intact in memory right now. `size` is the body size the log reports.
+    InventoryReceived { size: u64 },
+    /// The riven cycling screen opened ("OmegaRerollSelection.lua: Diorama setup").
+    RivenScreen,
+    /// The relic selection screen before a fissure (pattern `relic_select`;
+    /// empty until the line is known from a real EE.log).
+    RelicSelect,
     /// The Warframe process appeared (process watcher).
     GameStarted,
     /// The game window gained or lost the foreground (process watcher).
@@ -32,7 +40,9 @@ pub enum GameEvent {
     Raw { line: String },
 }
 
+/// Saved overrides may name only some patterns; the rest stay default.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Patterns {
     pub logged_in: String,
     pub mission_start: String,
@@ -41,6 +51,10 @@ pub struct Patterns {
     pub reward_done: String,
     pub trade_complete: String,
     pub relic_opened: String,
+    pub inventory_received: String,
+    pub riven_screen: String,
+    /// Empty = off.
+    pub relic_select: String,
 }
 
 impl Default for Patterns {
@@ -48,7 +62,8 @@ impl Default for Patterns {
         Self {
             // Older builds append the account id: "Logged in Name (5fb6...)".
             logged_in: r"Logged in (\S+)(?: \(([0-9a-f]{24})\))?".into(),
-            mission_start: r#"Sys \[Info\]: Loading level: .*?/([A-Za-z0-9_]+)"#.into(),
+            // "Net [Info]: Set squad mission: {\"difficulty\":1,\"name\":\"SolNode409\"}" (verified).
+            mission_start: r#"Set squad mission: .*?"name":"([A-Za-z0-9_]+)""#.into(),
             mission_end: r"Sys \[Info\]: EOM\b".into(),
             // Verified against a live EE.log: the four cards exist once
             // "Got rewards" is logged; the .swf also appears in loader lines, so
@@ -58,6 +73,9 @@ impl Default for Patterns {
             trade_complete: r"Trade complete|TradingDialog.*?completed".into(),
             // Last relic loaded before the fissure; refinement suffix stripped.
             relic_opened: r"Projections/(T\dVoidProjection\w+?)(?:Bronze|Silver|Gold|Platinum)\)".into(),
+            inventory_received: default_inventory_received(),
+            riven_screen: default_riven_screen(),
+            relic_select: String::new(),
         }
     }
 }
@@ -70,6 +88,9 @@ struct Compiled {
     reward_done: Regex,
     trade_complete: Regex,
     relic_opened: Regex,
+    inventory_received: Regex,
+    riven_screen: Regex,
+    relic_select: Option<Regex>,
 }
 
 impl Compiled {
@@ -82,13 +103,19 @@ impl Compiled {
             reward_done: Regex::new(&p.reward_done)?,
             trade_complete: Regex::new(&p.trade_complete)?,
             relic_opened: Regex::new(&p.relic_opened)?,
+            inventory_received: Regex::new(&p.inventory_received)?,
+            riven_screen: Regex::new(&p.riven_screen)?,
+            relic_select: if p.relic_select.trim().is_empty() { None } else { Some(Regex::new(&p.relic_select)?) },
         })
     }
 
+    /// Overrides may leave out a capture group; such a line is then ignored
+    /// instead of indexing past the captures.
     fn classify(&self, line: &str) -> Option<GameEvent> {
+        let cap = |c: &regex::Captures, i: usize| c.get(i).map(|m| m.as_str().to_string());
         if let Some(c) = self.logged_in.captures(line) {
             return Some(GameEvent::LoggedIn {
-                name: c[1].to_string(),
+                name: cap(&c, 1)?,
                 id: c.get(2).map(|m| m.as_str().to_string()),
             });
         }
@@ -104,8 +131,17 @@ impl Compiled {
         if self.reward_done.is_match(line) {
             return Some(GameEvent::RewardDone);
         }
+        if self.relic_select.as_ref().is_some_and(|r| r.is_match(line)) {
+            return Some(GameEvent::RelicSelect);
+        }
+        if self.riven_screen.is_match(line) {
+            return Some(GameEvent::RivenScreen);
+        }
+        if let Some(c) = self.inventory_received.captures(line) {
+            return Some(GameEvent::InventoryReceived { size: cap(&c, 1)?.parse().unwrap_or(0) });
+        }
         if let Some(c) = self.relic_opened.captures(line) {
-            return Some(GameEvent::RelicOpened { relic: c[1].to_string() });
+            return Some(GameEvent::RelicOpened { relic: cap(&c, 1)? });
         }
         if self.trade_complete.is_match(line) {
             return Some(GameEvent::TradeComplete);
@@ -114,7 +150,7 @@ impl Compiled {
             return Some(GameEvent::MissionEnd);
         }
         if let Some(c) = self.mission_start.captures(line) {
-            return Some(GameEvent::MissionStart { name: c[1].to_string() });
+            return Some(GameEvent::MissionStart { name: cap(&c, 1)? });
         }
         None
     }
@@ -192,4 +228,16 @@ pub fn spawn_tailer(
             partial = rest;
         }
     }))
+}
+
+/// "Sys [Info]: OnInventoryResults, body size=447803" — logged the moment the
+/// inventory.php response arrives, at login and on loading screens.
+fn default_inventory_received() -> String {
+    r"OnInventoryResults, body size=(\d+)".into()
+}
+
+/// Verified: "Script [Info]: OmegaRerollSelection.lua: Diorama setup" when the riven
+/// cycling screen is up (the card with its stats is on screen from then on).
+fn default_riven_screen() -> String {
+    r"OmegaRerollSelection\.lua: Diorama setup".into()
 }

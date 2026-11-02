@@ -16,6 +16,8 @@ pub fn log_dir() -> PathBuf {
 
 /// Console plus a daily log file. Call once, before anything logs.
 pub fn init_logging() {
+    // tracing_appender prunes old files by listing the directory; it must exist first.
+    let _ = std::fs::create_dir_all(log_dir());
     use tracing_subscriber::{fmt, prelude::*, EnvFilter};
     let filter = || EnvFilter::new("info,voidtrace=debug,wfc_core=debug,ui=debug");
     let registry = tracing_subscriber::registry().with(fmt::layer().with_filter(filter()));

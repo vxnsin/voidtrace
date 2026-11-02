@@ -121,3 +121,58 @@ pub async fn read_rewards(market: &Market, crop: Crop) -> Result<Vec<RewardHit>>
     }
     Ok(hits)
 }
+
+/// How small game text is prepared for the OCR engine.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Prep {
+    /// Colour as on screen, only scaled.
+    Color,
+    /// Grey, inverted: dark text on light background.
+    InvertGray,
+    /// Inverted with a hard knee (strong glow suppression).
+    Threshold,
+}
+
+/// Crop, scale up and prepare a region of a screenshot for OCR (BGRA out).
+pub fn prep_text(img: &xcap::image::RgbaImage, crop: Crop, scale: u32, prep: Prep) -> (u32, u32, Vec<u8>) {
+    let (fw, fh) = (img.width() as f32, img.height() as f32);
+    let (x, y) = ((crop.x * fw) as u32, (crop.y * fh) as u32);
+    let (w, h) = ((crop.w * fw) as u32, (crop.h * fh) as u32);
+    let sub = image_crop(img, x, y, w, h);
+    let (sw, sh) = (w * scale, h * scale);
+    let mut out = vec![0u8; (sw * sh * 4) as usize];
+    for yy in 0..sh {
+        for xx in 0..sw {
+            let s = (((yy / scale) * w + xx / scale) * 4) as usize;
+            let (r, g, b) = (sub[s], sub[s + 1], sub[s + 2]);
+            let d = ((yy * sw + xx) * 4) as usize;
+            let px = match prep {
+                Prep::Color => [b, g, r, 255],
+                Prep::InvertGray | Prep::Threshold => {
+                    let l = (0.114 * b as f32 + 0.587 * g as f32 + 0.299 * r as f32) as i32;
+                    let v = if prep == Prep::Threshold {
+                        if l > 150 { 0 } else if l < 90 { 255 } else { (255 - (l - 90) * 255 / 60).clamp(0, 255) }
+                    } else {
+                        255 - l
+                    } as u8;
+                    [v, v, v, 255]
+                }
+            };
+            out[d..d + 4].copy_from_slice(&px);
+        }
+    }
+    (sw, sh, out)
+}
+
+pub fn screenshot() -> Result<xcap::image::RgbaImage> {
+    let m = xcap::Monitor::all()?
+        .into_iter()
+        .find(|m| m.is_primary().unwrap_or(false))
+        .context("no primary monitor")?;
+    Ok(m.capture_image()?)
+}
+
+/// Screenshot, crop and prepare small game text (riven card, "Fits in" box).
+pub fn capture_text(crop: Crop, scale: u32, prep: Prep) -> Result<(u32, u32, Vec<u8>)> {
+    Ok(prep_text(&screenshot()?, crop, scale, prep))
+}

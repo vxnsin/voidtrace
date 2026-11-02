@@ -1,5 +1,5 @@
 import { reactive } from "vue";
-import { api, type GameEvent, type RewardHit, type WorldState } from "../api";
+import { api, type GameEvent, type Notice, type RewardHit, type RivenScan, type WorldState } from "../api";
 
 // Shared live data for the widgets, in whichever window shows them (overlay
 // layer, Widgets tab). Started once per window.
@@ -8,11 +8,22 @@ export const live = reactive({
   world: null as WorldState | null,
   rewards: [] as RewardHit[],
   showRewards: false,
+  /** Last riven scan (hotkey); shown for a while. */
+  riven: null as RivenScan | null,
+  showRiven: false,
+  /** Newest first, at most three; each leaves after NOTICE_MS. */
+  notices: [] as (Notice & { key: number })[],
+  /** The overlay editor is open (widgets show examples). */
+  editing: false,
+  /** Relic selection screen is up (log trigger `relic_select`), for a minute. */
+  relicSelect: false,
   game: { running: false, focused: false, where: "orbiter" as "orbiter" | "mission" },
   session: { start: Date.now() / 1000, plat: null as number | null, ducats: null as number | null, relics: 0, trades: 0 },
 });
 
 let started = false;
+let relicTimer: ReturnType<typeof setTimeout> | undefined;
+let rivenTimer: ReturnType<typeof setTimeout> | undefined;
 
 async function refreshSession() {
   const since = live.session.start;
@@ -42,11 +53,17 @@ function onGame(e: GameEvent) {
       live.game.running = false;
       live.game.focused = false;
       break;
+    case "relic_select":
+      live.relicSelect = true;
+      clearTimeout(relicTimer);
+      relicTimer = setTimeout(() => (live.relicSelect = false), 60000);
+      break;
     case "game_focus":
       live.game.focused = !!e.focused;
       break;
     case "mission_start":
       live.game.where = "mission";
+      live.relicSelect = false;
       break;
     case "mission_end":
     case "logged_in":
@@ -66,7 +83,16 @@ export function startLive() {
   api.on<WorldState>("worldstate", (w) => (live.world = w));
   api.on<RewardHit[]>("rewards", (h) => { live.rewards = h; live.showRewards = true; });
   api.on("rewards-done", () => (live.showRewards = false));
+  api.on<RivenScan>("riven", (r) => {
+    live.riven = r;
+    live.showRiven = true;
+    clearTimeout(rivenTimer);
+    // The backend closes the panel when the card leaves the screen; this is only a safety net.
+    rivenTimer = setTimeout(() => (live.showRiven = false), 600000);
+  });
+  api.on("riven-done", () => (live.showRiven = false));
   api.on<GameEvent>("game-event", onGame);
+  api.on<Notice>("notice", onNotice);
   refreshSession();
   setInterval(refreshSession, 30000);
 }
@@ -86,4 +112,34 @@ export function progress(a: string | undefined, b: string | undefined, now = liv
   if (!a || !b) return 0;
   const s = Date.parse(a), e = Date.parse(b);
   return Math.min(1, Math.max(0, (now - s) / Math.max(1, e - s)));
+}
+
+const NOTICE_MS = 8000;
+let noticeKey = 0;
+function onNotice(n: Notice) {
+  const key = ++noticeKey;
+  live.notices = [{ ...n, key }, ...live.notices].slice(0, 3);
+  setTimeout(() => (live.notices = live.notices.filter((x) => x.key !== key)), NOTICE_MS);
+  // Only the overlay plays sounds, so the app window doesn't double them.
+  if (n.sound && location.hash.startsWith("#/overlay")) chime();
+}
+
+/** Two short soft tones; no sound file needed. */
+function chime() {
+  try {
+    const ctx = new AudioContext();
+    [660, 880].forEach((f, i) => {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.frequency.value = f;
+      o.type = "sine";
+      const t = ctx.currentTime + i * 0.12;
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.15, t + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.25);
+      o.connect(g).connect(ctx.destination);
+      o.start(t);
+      o.stop(t + 0.3);
+    });
+    setTimeout(() => ctx.close(), 800);
+  } catch {}
 }

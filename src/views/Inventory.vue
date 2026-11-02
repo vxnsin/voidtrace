@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { api, fmtTs, listingPrompt, type InvRow, type MarketItem, type PriceSummary, type Status, type SyncResult } from "../api";
 import ItemLink from "../components/ItemLink.vue";
 import ItemIcon from "../components/ItemIcon.vue";
+import InventorySets from "../components/InventorySets.vue";
+import ListingCheck from "../components/ListingCheck.vue";
 
 defineProps<{ status: Status | null }>();
 
@@ -23,9 +25,25 @@ const prices = ref<Record<string, PriceSummary>>({});
 const q = ref("");
 const results = ref<MarketItem[]>([]);
 const msg = ref("");
+const onlyDup = ref(false);
+const onlyVaulted = ref(false);
+const listed = ref<Set<string>>(new Set());
+const listedFilter = ref<"all" | "listed" | "unlisted">("all");
+const minPlat = ref(0);
+const shown = computed(() => rows.value.filter((r) => {
+  const p = prices.value[r.slug];
+  if (onlyDup.value && r.quantity < 2) return false;
+  if (onlyVaulted.value && !p?.vaulted) return false;
+  if (listedFilter.value === "listed" && !listed.value.has(r.slug)) return false;
+  if (listedFilter.value === "unlisted" && listed.value.has(r.slug)) return false;
+  if (minPlat.value && (p?.sell ?? 0) < minPlat.value) return false;
+  return true;
+}));
 
+const setsRef = ref<InstanceType<typeof InventorySets> | null>(null);
 async function load() {
   rows.value = await api.inventory();
+  setsRef.value?.load();
   for (const r of rows.value) api.marketPrice(r.slug).then((p) => (prices.value[r.slug] = p)).catch(() => {});
 }
 async function search() {
@@ -83,10 +101,17 @@ onMounted(async () => {
   <p v-if="msg" :class="/^(Listed|Synced|Auto-synced)/.test(msg) ? 'ok' : 'error'">{{ msg }}</p>
 
 
+  <div class="row" style="margin-top:12px">
+    <label class="row"><input type="checkbox" v-model="onlyDup" /> duplicates</label>
+    <label class="row"><input type="checkbox" v-model="onlyVaulted" /> vaulted</label>
+    <div class="modes"><button v-for="[k, l] in ([['all', 'all'], ['listed', 'listed'], ['unlisted', 'not listed']] as const)" :key="k" :class="{ on: listedFilter === k }" @click="listedFilter = k">{{ l }}</button></div>
+    <label class="row muted">min <input type="number" min="0" v-model.number="minPlat" style="width:64px" />p</label>
+    <span class="muted">{{ shown.length }} of {{ rows.length }}</span>
+  </div>
   <table style="margin-top:12px">
     <thead><tr><th>Item</th><th>Qty</th><th>Sell</th><th>Buy</th><th>Ducats</th><th></th></tr></thead>
     <tbody>
-      <tr v-for="r in rows" :key="r.slug">
+      <tr v-for="r in shown" :key="r.slug">
         <td><ItemLink :slug="r.slug" :name="r.name" :ducats="prices[r.slug]?.ducats" /></td>
         <td><input type="number" :value="r.quantity" style="width:70px" @change="set(r, Number(($event.target as HTMLInputElement).value))" /></td>
         <td class="plat">{{ prices[r.slug]?.sell ?? "–" }}</td>
@@ -99,4 +124,11 @@ onMounted(async () => {
       </tr>
     </tbody>
   </table>
+  <h2>Sets</h2>
+  <InventorySets ref="setsRef" :logged-in="!!status?.wfm_logged_in" />
+
+  <template v-if="status?.wfm_logged_in">
+    <h2>Listings</h2>
+    <ListingCheck :rows="rows" @listed="(s) => (listed = s)" />
+  </template>
 </template>

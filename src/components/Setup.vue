@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { api, type Status, type SyncResult } from "../api";
+import { theme } from "../theme";
 
 // First start: walk through what the app needs, test the parts that tend to
 // break (log path, privilege level, memory scan) right here instead of later.
@@ -13,6 +14,8 @@ let poll: number | undefined;
 
 const email = ref(""); const password = ref(""); const who = ref(""); const loginErr = ref(""); const busy = ref(false);
 const memorySync = ref(false); const sync = ref<SyncResult | null>(null); const syncErr = ref("");
+// "Not found" right after a late app start is expected; the step may continue.
+const syncLater = ref(false);
 const overlay = ref(true); const launch = ref(false);
 
 async function refresh() {
@@ -29,7 +32,7 @@ async function setMemorySync(on: boolean) {
   await api.setSetting("memory_sync", on ? "1" : "0");
 }
 async function testSync() {
-  busy.value = true; syncErr.value = ""; sync.value = null;
+  busy.value = true; syncErr.value = ""; sync.value = null; syncLater.value = false;
   try { sync.value = await api.inventorySync(); }
   catch (e) {
     const m = String(e);
@@ -37,7 +40,9 @@ async function testSync() {
       ? "Can't read the game. Start Warframe and VoidTrace the same way — neither as administrator — then try again."
       : /not running/.test(m) ? "Warframe isn't running yet. Start it, log in, then test again."
       : /not loaded/.test(m) ? "Game data is still downloading — give it a few seconds."
-      : `${m} — log in fully (past the loading screen) and try again; the inventory is only in memory for a while after login.`;
+      : /not found/.test(m)
+      ? (syncLater.value = true, "Not in memory right now — normal when VoidTrace started after the game. It syncs itself at the next loading screen (any mission or relay); you can go on.")
+      : m;
   } finally { busy.value = false; }
 }
 async function finish() {
@@ -54,7 +59,7 @@ const canNext = computed(() => step.value < steps.length - 1);
 const done = computed(() => {
   if (step.value === 1) return !!status.value?.ee_log_exists && running.value;
   if (step.value === 2) return !!status.value?.wfm_logged_in;
-  if (step.value === 3) return !memorySync.value || !!sync.value;
+  if (step.value === 3) return !memorySync.value || !!sync.value || syncLater.value;
   return true;
 });
 
@@ -76,7 +81,7 @@ function rain() {
   size();
   addEventListener("resize", size);
   const frame = () => {
-    ctx.fillStyle = "rgba(7,7,8,0.18)";
+    ctx.fillStyle = theme.current.bg + "2e"; // ~18% alpha: trails fade out
     ctx.fillRect(0, 0, c.width, c.height);
     ctx.font = `${CH - 2}px ${getComputedStyle(document.documentElement).getPropertyValue("--mono")}`;
     for (let x = 0; x < cols; x++) {
@@ -84,7 +89,7 @@ function rain() {
       heads[x] += speed[x];
       if (heads[x] > rows + 10) heads[x] = -Math.random() * rows;
       const y = Math.floor(heads[x]);
-      ctx.fillStyle = x % 37 === 0 ? "rgba(200,16,46,.55)" : "rgba(150,150,155,.35)";
+      ctx.fillStyle = x % 37 === 0 ? theme.current.accent + "8c" : theme.current.fg + "59";
       ctx.fillText(glyphs[1 + Math.floor(Math.random() * (glyphs.length - 1))], x * CW, y * CH);
     }
     raf = requestAnimationFrame(frame);
@@ -98,6 +103,8 @@ onMounted(async () => {
   launch.value = (await api.getSetting("launch_with_game")) === "1";
   await refresh();
   poll = window.setInterval(refresh, 2000);
+  // An automatic sync (next loading screen) completes the step on its own.
+  api.on<SyncResult>("inventory-synced", (r) => { sync.value = r; syncErr.value = ""; });
 });
 onUnmounted(() => { clearInterval(poll); cancelAnimationFrame(raf); });
 onMounted(rain);
@@ -155,7 +162,7 @@ onMounted(rain);
           <span class="muted" v-if="!running">start Warframe first</span>
         </div>
         <p v-if="sync" class="ok">Found {{ sync.items_tradeable }} tradeable of {{ sync.items_total }} items · {{ sync.platinum }}p · {{ sync.ducats }} ducats in {{ sync.seconds.toFixed(1) }}s</p>
-        <p v-if="syncErr" class="error">{{ syncErr }}</p>
+        <p v-if="syncErr" :class="syncLater ? 'muted' : 'error'">{{ syncErr }}</p>
       </section>
 
       <section v-if="step === 4">
@@ -190,7 +197,7 @@ section { min-height: 150px; }
 .check li.wait .st { color: var(--warn); animation: blink 1.2s steps(2) infinite; }
 @keyframes blink { 50% { opacity: .35; } }
 .bg { position: absolute; inset: 0; width: 100%; height: 100%; }
-.box { position: relative; background: rgba(11, 11, 13, .94); }
+.box { position: relative; background: color-mix(in srgb, var(--bg2) 94%, transparent); }
 .check li.info::before { content: " · "; }
 .steps-nav { justify-content: flex-end; margin-top: 18px; }
 </style>
