@@ -137,14 +137,29 @@ pub fn read_inventory_json() -> Result<serde_json::Value> {
                     let Some((base, len)) = queue.lock().unwrap().next() else { return };
                     buf.clear();
                     buf.resize(len, 0);
+                    // One call for the whole window fails entirely (ERROR_PARTIAL_COPY) as soon as a
+                    // single page in it is gone, which in a busy heap is most windows. Fall back to
+                    // 64 KB pieces and leave unreadable ones zeroed.
                     let mut got = 0usize;
                     let ok = unsafe {
                         ReadProcessMemory(hh.0, base as *const _, buf.as_mut_ptr() as *mut _, len, Some(&mut got)).is_ok()
                     };
-                    if !ok || got == 0 {
-                        continue;
+                    if !ok || got < len {
+                        const PIECE: usize = 64 << 10;
+                        let mut off = 0usize;
+                        while off < len {
+                            let n = PIECE.min(len - off);
+                            let mut g = 0usize;
+                            let ok = unsafe {
+                                ReadProcessMemory(hh.0, (base + off) as *const _, buf[off..].as_mut_ptr() as *mut _, n, Some(&mut g)).is_ok()
+                            };
+                            if !ok {
+                                buf[off..off + n].fill(0);
+                            }
+                            off += n;
+                        }
                     }
-                    if let Some(doc) = best_candidate(&buf[..got]) {
+                    if let Some(doc) = best_candidate(&buf) {
                         let mut f = found.lock().unwrap();
                         if f.as_ref().map(|(_, d)| d.len() < doc.len()).unwrap_or(true) {
                             *f = Some((base, doc));
@@ -172,7 +187,9 @@ pub fn read_inventory_json() -> Result<serde_json::Value> {
     serde_json::from_slice(&doc).context("inventory JSON did not parse")
 }
 
-/// Run `cb` over every contiguous readable run of the Warframe process. Debug aid.
+/// Run `cb` over every committed readable region of the Warframe process, in
+/// pieces of at most 16 MB (overlapping by 64 bytes so short keys on a seam are
+/// still seen). One buffer is reused, so a huge region costs no more memory.
 #[cfg(windows)]
 pub fn walk_memory(mut cb: impl FnMut(usize, &[u8])) -> Result<()> {
     use windows::Win32::Foundation::CloseHandle;
@@ -182,6 +199,9 @@ pub fn walk_memory(mut cb: impl FnMut(usize, &[u8])) -> Result<()> {
 
     let pid = find_pid().context("Warframe is not running")?;
     let h = unsafe { OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, false, pid) }?;
+    const CHUNK: usize = 16 << 20;
+    const OVERLAP: usize = 64;
+    let mut buf = vec![0u8; CHUNK + OVERLAP];
     let mut addr: usize = 0;
     loop {
         let mut mbi = MEMORY_BASIC_INFORMATION::default();
@@ -192,11 +212,19 @@ pub fn walk_memory(mut cb: impl FnMut(usize, &[u8])) -> Result<()> {
         let base = mbi.BaseAddress as usize;
         let size = mbi.RegionSize;
         let prot = mbi.Protect.0;
-        if mbi.State == MEM_COMMIT && prot & PAGE_GUARD.0 == 0 && prot & PAGE_NOACCESS.0 == 0 && size < (1 << 32) {
-            let mut buf = vec![0u8; size];
-            let mut got = 0usize;
-            if unsafe { ReadProcessMemory(h, base as *const _, buf.as_mut_ptr() as *mut _, size, Some(&mut got)) }.is_ok() && got > 0 {
-                cb(base, &buf[..got]);
+        if mbi.State == MEM_COMMIT && prot & PAGE_GUARD.0 == 0 && prot & PAGE_NOACCESS.0 == 0 {
+            let mut off = 0usize;
+            while off < size {
+                let len = (size - off).min(CHUNK + OVERLAP);
+                let mut got = 0usize;
+                let at = base + off;
+                if unsafe { ReadProcessMemory(h, at as *const _, buf.as_mut_ptr() as *mut _, len, Some(&mut got)) }.is_ok() && got > 0 {
+                    cb(at, &buf[..got]);
+                }
+                if off + len >= size {
+                    break;
+                }
+                off += CHUNK;
             }
         }
         addr = match base.checked_add(size) {
@@ -295,12 +323,49 @@ fn best_candidate(buf: &[u8]) -> Option<Vec<u8>> {
             if !MUST_CONTAIN.iter().all(|k| memchr::memmem::find(cand, k).is_some()) {
                 continue;
             }
+            // A block header can sit inside a string, so brace matching alone is no proof.
+            if serde_json::from_slice::<serde::de::IgnoredAny>(cand).is_err() {
+                continue;
+            }
             if best.map(|b| b.len() < cand.len()).unwrap_or(true) {
                 best = Some(cand);
             }
         }
     }
-    best.map(|b| b.to_vec())
+    if let Some(b) = best {
+        return Some(b.to_vec());
+    }
+    // The copy the game keeps after parsing is split into blocks with short binary
+    // headers in between. Drop every non-printable byte around the anchor and try
+    // again; only a result that parses as JSON is accepted.
+    for anchor in ANCHORS {
+        for pos in memchr::memmem::find_iter(buf, anchor) {
+            if let Some(doc) = stitched(buf, pos) {
+                return Some(doc);
+            }
+        }
+    }
+    None
+}
+
+fn printable(b: u8) -> bool {
+    (0x20..0x7f).contains(&b) || b == 9 || b == 10 || b == 13
+}
+
+fn stitched(buf: &[u8], pos: usize) -> Option<Vec<u8>> {
+    const SPAN: usize = 4 << 20;
+    let lo = pos.saturating_sub(SPAN);
+    let hi = (pos + SPAN).min(buf.len());
+    let before = buf[lo..pos].iter().filter(|b| printable(**b)).count();
+    let clean: Vec<u8> = buf[lo..hi].iter().copied().filter(|b| printable(*b)).collect();
+    let start = find_start(&clean, before)?;
+    let end = match_object(&clean[start..])?;
+    let cand = &clean[start..start + end];
+    if !MUST_CONTAIN.iter().all(|k| memchr::memmem::find(cand, k).is_some()) {
+        return None;
+    }
+    serde_json::from_slice::<serde_json::Value>(cand).ok()?;
+    Some(cand.to_vec())
 }
 
 /// Walk backwards from a key at `pos` (which is at depth 1 inside the document)
@@ -422,6 +487,11 @@ pub fn read_inventory_json() -> Result<serde_json::Value> {
     anyhow::bail!("memory scan only on Windows")
 }
 
+#[cfg(not(windows))]
+pub fn walk_memory(_cb: impl FnMut(usize, &[u8])) -> Result<()> {
+    anyhow::bail!("memory scan only on Windows")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -438,4 +508,87 @@ mod tests {
         assert_eq!(got, doc.to_vec());
         serde_json::from_slice::<serde_json::Value>(&got).unwrap();
     }
+}
+
+/// Bring the game's main window to the front (after the overlay editor, which
+/// had to take focus, closes). Returns whether a window was found.
+#[cfg(windows)]
+pub fn focus_game() -> bool {
+    use windows::Win32::Foundation::{BOOL, HWND, LPARAM};
+    use windows::Win32::UI::WindowsAndMessaging::{
+        EnumWindows, GetWindowThreadProcessId, IsWindowVisible, SetForegroundWindow, ShowWindow, SW_RESTORE,
+    };
+    let Some(pid) = find_pid() else { return false };
+    struct Ctx {
+        pid: u32,
+        hwnd: Option<HWND>,
+    }
+    unsafe extern "system" fn cb(h: HWND, l: LPARAM) -> BOOL {
+        let ctx = &mut *(l.0 as *mut Ctx);
+        let mut p = 0u32;
+        GetWindowThreadProcessId(h, Some(&mut p as *mut u32));
+        if p == ctx.pid && IsWindowVisible(h).as_bool() {
+            ctx.hwnd = Some(h);
+            return BOOL(0);
+        }
+        BOOL(1)
+    }
+    let mut ctx = Ctx { pid, hwnd: None };
+    unsafe {
+        let _ = EnumWindows(Some(cb), LPARAM(&mut ctx as *mut Ctx as isize));
+        if let Some(h) = ctx.hwnd {
+            let _ = ShowWindow(h, SW_RESTORE);
+            return SetForegroundWindow(h).as_bool();
+        }
+    }
+    false
+}
+
+#[cfg(not(windows))]
+pub fn focus_game() -> bool {
+    false
+}
+
+#[cfg(test)]
+mod stitch_tests {
+    use super::*;
+
+    #[test]
+    fn stitches_blocks_split_by_binary_headers() {
+        let doc = br#"{"SubscribedToEmails":0,"MiscItems":[{"ItemType":"/a","ItemCount":1}],"Recipes":[],"XPInfo":[{"ItemType":"/b","XP":5}]}"#;
+        let (a, b) = doc.split_at(40);
+        let mut buf = vec![0u8; 64];
+        buf.extend_from_slice(a);
+        buf.extend_from_slice(&[0x00, 0x10, 0x97, 0xa1, 0x00, 0x00, 0x8f, 0x00]);
+        buf.extend_from_slice(b);
+        buf.extend_from_slice(&[0u8; 64]);
+        let got = best_candidate(&buf).expect("stitched");
+        assert_eq!(got, doc.to_vec());
+    }
+}
+
+/// The account id the game sends with its requests ("accountId=<24 hex>"),
+/// most frequent one wins. Same read-only scan as the inventory.
+#[cfg(windows)]
+pub fn find_account_id() -> Option<String> {
+    let mut counts: std::collections::HashMap<Vec<u8>, usize> = Default::default();
+    walk_memory(|_, buf| {
+        for key in [&b"accountId="[..], &b"\"accountId\":\""[..]] {
+            for pos in memchr::memmem::find_iter(buf, key) {
+                let s = pos + key.len();
+                if let Some(id) = buf.get(s..s + 24) {
+                    if id.iter().all(|c| c.is_ascii_hexdigit()) {
+                        *counts.entry(id.to_vec()).or_default() += 1;
+                    }
+                }
+            }
+        }
+    })
+    .ok()?;
+    counts.into_iter().max_by_key(|(_, n)| *n).map(|(id, _)| String::from_utf8_lossy(&id).to_lowercase())
+}
+
+#[cfg(not(windows))]
+pub fn find_account_id() -> Option<String> {
+    None
 }

@@ -28,6 +28,8 @@ pub struct ExportItem {
     pub disposition: f32,
     #[serde(default, rename = "totalDamage")]
     pub total_damage: f32,
+    #[serde(default, rename = "masteryReq")]
+    pub mastery_req: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -65,15 +67,37 @@ struct Resource {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-struct Recipe {
+struct Region {
     #[serde(rename = "uniqueName")]
     unique_name: String,
+    name: String,
+    #[serde(default, rename = "systemName")]
+    system_name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Ingredient {
+    #[serde(rename = "ItemType")]
+    pub item_type: String,
+    #[serde(rename = "ItemCount")]
+    pub count: i64,
+}
+
+/// A foundry blueprint: what it builds and from what.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Recipe {
+    #[serde(rename = "uniqueName")]
+    pub unique_name: String,
     #[serde(rename = "resultType")]
-    result_type: String,
+    pub result_type: String,
+    #[serde(default)]
+    pub ingredients: Vec<Ingredient>,
+    #[serde(default, rename = "buildPrice")]
+    pub build_price: i64,
 }
 
 /// Bump when the cached shape changes so stale caches are refetched.
-const CACHE_VERSION: u32 = 2;
+const CACHE_VERSION: u32 = 3;
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct Export {
@@ -90,6 +114,12 @@ pub struct Export {
     /// Blueprint recipes resolve to "<result> Blueprint", matching warframe.market.
     #[serde(default)]
     pub item_names: HashMap<String, String>,
+    /// Blueprints of masterable items and their components.
+    #[serde(default)]
+    pub recipes: Vec<Recipe>,
+    /// Star chart node id ("SolNode409") -> "Name (Planet)".
+    #[serde(default)]
+    pub regions: HashMap<String, String>,
 }
 
 const MASTERABLE_CATEGORIES: &[&str] = &[
@@ -134,7 +164,8 @@ impl Export {
         };
 
         if let Some(cached) = Self::load_cached() {
-            if cached.index_hash == index_hash {
+            // Empty recipes or regions mean a fetch failed last time; try again.
+            if cached.index_hash == index_hash && !cached.recipes.is_empty() && !cached.regions.is_empty() {
                 return Ok(cached);
             }
         }
@@ -189,6 +220,12 @@ impl Export {
             get(client, &files, "ExportRecipes", "ExportRecipes").await.unwrap_or_default();
         let upgrades: Vec<Resource> =
             get(client, &files, "ExportUpgrades", "ExportUpgrades").await.unwrap_or_default();
+        let regions: HashMap<String, String> = get::<Region>(client, &files, "ExportRegions", "ExportRegions")
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .map(|r| (r.unique_name, if r.system_name.is_empty() { r.name } else { format!("{} ({})", r.name, r.system_name) }))
+            .collect();
         // Relic names before the " Relic" trim, for inventory display.
         let relic_names: Vec<(String, String)> =
             relics.iter().map(|r| (r.unique_name.clone(), r.name.clone())).collect();
@@ -256,6 +293,11 @@ impl Export {
             relics,
             images,
             item_names,
+            recipes: recipes
+                .into_iter()
+                .filter(|r| !r.ingredients.is_empty())
+                .collect(),
+            regions,
         };
         std::fs::write(Self::cache_path(), serde_json::to_string(&ex)?)?;
         Ok(ex)
@@ -278,6 +320,10 @@ impl Export {
             .or_else(|| self.item_names.get(path))
             .cloned()
             .unwrap_or_else(|| crate::relic::reward_display(path))
+    }
+
+    pub fn node_name(&self, node: &str) -> String {
+        self.regions.get(node).cloned().unwrap_or_else(|| node.to_string())
     }
 
     pub fn reward_name(&self, path: &str) -> String {

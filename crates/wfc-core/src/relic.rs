@@ -105,3 +105,56 @@ pub fn relics_for(ex: &Export, wanted: &str) -> Vec<(String, String, [f32; 4])> 
     out.sort_by(|a, b| b.2[3].partial_cmp(&a.2[3]).unwrap());
     out
 }
+
+/// Like `plan`, but only from prices already fetched (no requests). Also
+/// returns the slugs that have no price yet, so the caller can fetch them
+/// at its own pace. `lookup` finds the market item for a drop name (the
+/// caller builds one index for many relics).
+pub fn plan_cached(ex: &Export, market: &Market, lookup: &dyn Fn(&str) -> Option<crate::market::MarketItem>, relic: &ExportRelic) -> (RelicPlan, Vec<String>) {
+    let mut drops = Vec::new();
+    let mut missing = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for r in &relic.relic_rewards {
+        let name = ex.reward_name(&r.reward_name);
+        if !seen.insert(name.clone()) {
+            continue;
+        }
+        let (plat, ducats, slug, vaulted) = match lookup(&name) {
+            Some(mi) => {
+                let p = market.cached_price(&mi.slug).map(|(_, p)| p);
+                if p.is_none() {
+                    missing.push(mi.slug.clone());
+                }
+                (p.and_then(|p| p.sell), mi.ducats, Some(mi.slug), mi.vaulted)
+            }
+            None => (None, 0, None, false),
+        };
+        drops.push(DropInfo { item: name, rarity: r.rarity.clone(), chance: chance_for(&r.rarity), plat, ducats, slug, vaulted });
+    }
+    let mut expected_plat = [0f32; 4];
+    let mut expected_ducats = [0f32; 4];
+    for d in &drops {
+        for i in 0..4 {
+            expected_plat[i] += d.chance[i] / 100.0 * d.plat.unwrap_or(0) as f32;
+            expected_ducats[i] += d.chance[i] / 100.0 * d.ducats as f32;
+        }
+    }
+    (RelicPlan { relic: relic.name.clone(), drops, expected_plat, expected_ducats }, missing)
+}
+
+/// Refinement index (0 Intact … 3 Radiant) from a relic item path suffix.
+pub fn refinement_of(path: &str) -> Option<usize> {
+    ["Bronze", "Silver", "Gold", "Platinum"].iter().position(|s| path.ends_with(s))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn refinement_from_path() {
+        assert_eq!(refinement_of("/Lotus/Types/Game/Projections/T1VoidProjectionOBronze"), Some(0));
+        assert_eq!(refinement_of("/Lotus/Types/Game/Projections/T3VoidProjectionVorunaPrimeCPlatinum"), Some(3));
+        assert_eq!(refinement_of("/Lotus/Types/Items/MiscItems/Forma"), None);
+    }
+}
